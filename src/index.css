@@ -1,0 +1,89 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@layer base {
+  body {
+    @apply antialiased;
+  }
+}
+
+@layer components {
+  /* Neumorphic Card Style */
+  .card-neumorphic {
+    @apply bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-2xl border border-yellow-500/20 backdrop-blur-sm;
+  }
+
+  /* Inset Neumorphic Style */
+  .inset-neumorphic {
+    @apply bg-gray-900/50 border border-gray-700;
+  }
+
+  /* Gold Button Style */
+  .btn-gold {
+    @apply bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-gray-900 shadow-lg hover:shadow-yellow-500/50 transition-all duration-300;
+  }
+
+  /* Neumorphic Shadow Variations */
+  .shadow-neumorphic {
+    box-shadow: 
+      8px 8px 16px rgba(0, 0, 0, 0.4),
+      -8px -8px 16px rgba(255, 255, 255, 0.02);
+  }
+
+  .shadow-neumorphic-lg {
+    box-shadow: 
+      12px 12px 24px rgba(0, 0, 0, 0.5),
+      -12px -12px 24px rgba(255, 255, 255, 0.03);
+  }
+
+  .shadow-neumorphic-inset {
+    box-shadow: 
+      inset 4px 4px 8px rgba(0, 0, 0, 0.4),
+      inset -4px -4px 8px rgba(255, 255, 255, 0.02);
+  }
+
+  .shadow-glow-gold {
+    box-shadow: 
+      0 0 20px rgba(234, 179, 8, 0.3),
+      0 0 40px rgba(234, 179, 8, 0.1);
+  }
+
+  /* Smooth Transition */
+  .transition-smooth {
+    @apply transition-all duration-300 ease-in-out;
+  }
+}
+
+@layer utilities {
+  /* Custom Text Gradient */
+  .text-gold-gradient {
+    @apply bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-400 bg-clip-text text-transparent;
+  }
+
+  /* Float Animation */
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+}
+
+/* Custom Color Variables (if needed for future use) */
+:root {
+  --orbit-dark: #1a1a1a;
+  --orbit-darker: #0f0f0f;
+  --orbit-light: #2a2a2a;
+  --orbit-gold: #eab308;
+  --orbit-gold-light: #fbbf24;
+  --orbit-bronze: #92724f;
+  --orbit-bronze-light: #b8956a;
+  --orbit-cream: #f5f5dc;
+}
