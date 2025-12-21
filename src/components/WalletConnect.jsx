@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Wallet, Loader, AlertCircle } from 'lucide-react';
+import { Wallet, Loader, AlertCircle, ExternalLink, Sparkles } from 'lucide-react';
 import { isConnected, requestAccess } from '@stellar/freighter-api';
 import * as StellarSdk from 'stellar-sdk';
 
@@ -12,7 +12,6 @@ function WalletConnect({ onConnect, buttonText = "Connect Freighter Wallet" }) {
     setError(null);
 
     try {
-      // Check if Freighter is installed
       const connectedResult = await isConnected();
       
       if (!connectedResult.isConnected) {
@@ -21,7 +20,6 @@ function WalletConnect({ onConnect, buttonText = "Connect Freighter Wallet" }) {
 
       console.log('Freighter is installed, requesting access...');
 
-      // Request access and get public key
       const accessObj = await requestAccess();
       
       if (accessObj.error) {
@@ -39,18 +37,33 @@ function WalletConnect({ onConnect, buttonText = "Connect Freighter Wallet" }) {
       // Connect to Stellar Testnet
       const server = new StellarSdk.Horizon.Server('https://horizon-testnet.stellar.org');
       
-      // Load account to get balance
-      const account = await server.loadAccount(publicKey);
+      let balance = 0;
+      let needsFunding = false;
       
-      // Get XLM balance
-      const xlmBalance = account.balances.find(
-        balance => balance.asset_type === 'native'
-      );
+      try {
+        // Try to load account to get balance
+        const account = await server.loadAccount(publicKey);
+        
+        // Get XLM balance
+        const xlmBalance = account.balances.find(
+          balance => balance.asset_type === 'native'
+        );
+        balance = parseFloat(xlmBalance?.balance || 0);
+      } catch (loadErr) {
+        // Account not found on chain - this is OK, user just needs to fund it
+        if (loadErr.response?.status === 404 || loadErr.message?.includes('Not Found')) {
+          console.log('Account not yet funded on testnet - connecting with 0 balance');
+          needsFunding = true;
+        } else {
+          throw loadErr;
+        }
+      }
 
       const walletData = {
         publicKey,
-        balance: parseFloat(xlmBalance?.balance || 0),
-        type: 'connected'
+        balance,
+        type: 'connected',
+        needsFunding
       };
 
       console.log('Wallet data:', walletData);
@@ -65,8 +78,6 @@ function WalletConnect({ onConnect, buttonText = "Connect Freighter Wallet" }) {
         errorMessage = 'Freighter wallet not found. Please install the Freighter browser extension from https://www.freighter.app/';
       } else if (err.message?.includes('User declined') || err.message?.includes('rejected')) {
         errorMessage = 'Connection rejected. Please approve the connection in Freighter.';
-      } else if (err.response?.status === 404 || err.message?.includes('Not Found')) {
-        errorMessage = 'Account not found on testnet. Please fund your account using the XLM Faucet first.';
       } else if (err.message?.includes('Network Error')) {
         errorMessage = 'Network error. Please check your internet connection and try again.';
       } else {
@@ -80,46 +91,68 @@ function WalletConnect({ onConnect, buttonText = "Connect Freighter Wallet" }) {
   };
 
   return (
-    <div className="card-neumorphic p-8">
+    <div className="card-neumorphic p-8 sm:p-10 max-w-md mx-auto border-orbit-gold/20">
       <div className="text-center">
-        <Wallet size={64} className="mx-auto text-yellow-400 mb-4 animate-float" />
-        <h2 className="text-2xl font-bold text-yellow-400 mb-4">Connect Your Wallet</h2>
+        {/* Icon with glow effect */}
+        <div className="relative w-24 h-24 mx-auto mb-6">
+          <div className="absolute inset-0 bg-orbit-gold/30 blur-2xl rounded-full animate-pulse" />
+          <div className="relative w-full h-full flex items-center justify-center rounded-2xl bg-orbit-dark-light border border-orbit-gold/30">
+            <Wallet size={48} className="text-orbit-gold drop-shadow-[0_0_10px_rgba(247,147,26,0.5)]" />
+          </div>
+        </div>
         
-        <p className="text-gray-400 text-sm mb-6">
+        <h2 className="text-2xl font-display font-bold text-white mb-3 tracking-wider uppercase">Connect Wallet</h2>
+        <p className="text-orbit-gray text-base mb-8 font-medium">
           Connect your Freighter wallet to access the platform
         </p>
         
         {error && (
-          <div className="mb-4 p-4 bg-red-900/30 border-2 border-red-500/50 rounded-xl flex items-start gap-2">
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-3 text-left animate-slide-up">
             <AlertCircle size={18} className="text-red-400 mt-0.5 flex-shrink-0" />
-            <p className="text-red-300 text-sm text-left">{error}</p>
+            <p className="text-red-300 text-sm font-medium">{error}</p>
           </div>
         )}
         
         <button
           onClick={connectWallet}
           disabled={loading}
-          className="btn-gold py-3 px-8 rounded-xl font-bold text-lg transition-smooth disabled:opacity-50 flex items-center justify-center gap-2 mx-auto"
+          className="w-full btn-gold py-4 px-6 rounded-xl font-bold text-base uppercase tracking-wider flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(247,147,26,0.3)]"
         >
           {loading ? (
             <>
-              <Loader size={20} className="animate-spin" /> Connecting...
+              <Loader size={20} className="animate-spin" />
+              <span>Connecting...</span>
             </>
           ) : (
             <>
-              <Wallet size={20} /> {buttonText}
+              <Wallet size={20} />
+              <span>{buttonText}</span>
             </>
           )}
         </button>
 
-        <div className="mt-6 bg-gray-900/50 rounded-xl p-4 border border-gray-700">
-          <p className="text-gray-400 text-xs leading-relaxed">
-            <strong className="text-gray-300">Don't have Freighter?</strong><br />
-            1. Install from <a href="https://www.freighter.app/" target="_blank" rel="noopener noreferrer" className="text-yellow-400 hover:underline">freighter.app</a><br />
-            2. Create or import a wallet<br />
-            3. Switch to <strong className="text-yellow-400">Testnet</strong> mode in settings<br />
-            4. Return here and click "Connect Wallet"
+        <div className="mt-8 p-5 rounded-xl bg-orbit-dark-light border border-orbit-gold/10">
+          <p className="text-orbit-gray-light text-base mb-4 font-semibold uppercase tracking-wide">
+            Don't have Freighter?
           </p>
+          <ol className="text-left space-y-3 text-base text-orbit-gray font-medium">
+            <li className="flex items-start gap-3">
+              <span className="flex-shrink-0 w-7 h-7 rounded-lg bg-orbit-gold/20 text-orbit-gold text-sm font-bold flex items-center justify-center border border-orbit-gold/30">1</span>
+              <span>Install from <a href="https://www.freighter.app/" target="_blank" rel="noopener noreferrer" className="text-orbit-gold hover:text-orbit-gold-light transition-colors inline-flex items-center gap-1 font-semibold">freighter.app <ExternalLink size={12} /></a></span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="flex-shrink-0 w-7 h-7 rounded-lg bg-orbit-gold/20 text-orbit-gold text-sm font-bold flex items-center justify-center border border-orbit-gold/30">2</span>
+              <span>Create or import a wallet</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="flex-shrink-0 w-7 h-7 rounded-lg bg-orbit-gold/20 text-orbit-gold text-sm font-bold flex items-center justify-center border border-orbit-gold/30">3</span>
+              <span>Switch to <span className="text-orbit-gold font-semibold">Testnet</span> mode</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="flex-shrink-0 w-7 h-7 rounded-lg bg-orbit-gold/20 text-orbit-gold text-sm font-bold flex items-center justify-center border border-orbit-gold/30">4</span>
+              <span>Return here and connect</span>
+            </li>
+          </ol>
         </div>
       </div>
     </div>

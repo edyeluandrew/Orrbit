@@ -1,19 +1,61 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as StellarSdk from 'stellar-sdk';
-import { Zap } from 'lucide-react';
-import WalletConnect from './components/WalletConnect';
+import { Zap, Loader, CreditCard, Settings, LayoutDashboard, User, Shield, Activity, Users, Cog } from 'lucide-react';
+import MultiWalletConnect from './components/MultiWalletConnect';
 import BalanceDisplay from './components/BalanceDisplay';
 import SubscriptionForm from './components/SubscriptionForm';
 import TransactionFeed from './components/TransactionFeed';
 import XLMFaucet from './components/XLMFaucet';
+import ServiceProviderManager from './components/ServiceProviderManager';
+import AdminDashboard from './components/AdminDashboard';
+import AdminTransactions from './components/AdminTransactions';
+import UsersManager from './components/UsersManager';
+import SettingsPanel from './components/SettingsPanel';
+import { useToast } from './context/ToastContext';
+import useWalletSession from './hooks/useWalletSession';
+import useRecurringPayments from './hooks/useRecurringPayments';
+import { useWalletService } from './hooks/useWalletService';
+import { getPlatformWallet, isAdminWallet } from './config/platform';
 
 function App() {
   const [wallet, setWallet] = useState(null);
-  const [platformWallet, setPlatformWallet] = useState(null);
   const [balance, setBalance] = useState({ xlm: 0 });
   const [transactions, setTransactions] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
   const [lastTxHash, setLastTxHash] = useState(null);
+  const [activeTab, setActiveTab] = useState('payments'); // payments, providers, dashboard
+  const [viewMode, setViewMode] = useState('user'); // 'user' or 'admin' - only for admin wallets
+  
+  // Platform wallet from config (no user setup needed)
+  const platformWallet = getPlatformWallet();
+  
+  // Wallet service for built-in/imported wallets
+  const walletService = useWalletService();
+
+  // Toast notifications
+  const toast = useToast();
+
+  // Use ref to track if session was restored (doesn't cause re-renders)
+  const sessionRestoredRef = useRef(false);
+
+  // Session persistence - auto-reconnect wallet on page load
+  const {
+    isRestoring,
+    restoredWallet,
+    saveWalletSession,
+    clearWalletSession,
+  } = useWalletSession();
+
+  // Restore wallet sessions on mount (only once, using ref)
+  useEffect(() => {
+    if (!isRestoring && !sessionRestoredRef.current && restoredWallet) {
+      sessionRestoredRef.current = true;
+      console.log('🔄 Restoring session with balance:', restoredWallet.balance);
+      setWallet(restoredWallet);
+      setBalance({ xlm: restoredWallet.balance || 0 });
+      toast.success('Wallet Restored', `Connected to ${restoredWallet.publicKey.slice(0, 8)}...`);
+    }
+  }, [isRestoring, restoredWallet, toast]);
 
   // Load data from localStorage on component mount
   useEffect(() => {
@@ -40,35 +82,46 @@ function App() {
 
   // ✅ FIXED: Memoized wallet connect handler
   const handleWalletConnect = useCallback((walletData) => {
-    console.log('👛 Wallet connected:', walletData);
+    console.log('✅ Wallet connected:', walletData);
     setWallet(walletData);
     setBalance({ xlm: walletData.balance || 0 });
-  }, []);
+    saveWalletSession(walletData);
+    toast.success('Wallet Connected', `Connected to ${walletData.publicKey.slice(0, 8)}...`);
+  }, [saveWalletSession, toast]);
 
-  // ✅ FIXED: Memoized platform wallet connect handler
-  const handlePlatformWalletConnect = useCallback((walletData) => {
-    console.log('🏦 Platform wallet connected:', walletData);
-    setPlatformWallet(walletData);
-  }, []);
-
-  // ✅ FIXED: Memoized balance update handler
+  // Memoized balance update handler
   const handleBalanceUpdate = useCallback((newBalance) => {
-    console.log('💰 Balance updated from network:', newBalance);
+    console.log('💰 handleBalanceUpdate called with:', newBalance);
     setBalance(newBalance);
   }, []);
 
-  // ✅ FIXED: Direct balance update with useCallback
+  // ✅ FIXED: Direct balance update with cache-busting
   const updateBalanceDirectly = useCallback(async () => {
     if (!wallet?.publicKey) return;
     
     try {
-      const server = new StellarSdk.Horizon.Server('https://horizon-testnet.stellar.org');
-      const account = await server.loadAccount(wallet.publicKey);
+      // Use native fetch with cache-busting to avoid stale data
+      const timestamp = Date.now();
+      const url = `https://horizon-testnet.stellar.org/accounts/${wallet.publicKey}?_=${timestamp}`;
       
-      const xlmBalance = account.balances.find(balance => balance.asset_type === 'native');
+      console.log('🔍 Fetching fresh balance from Stellar (cache-busted)...');
+      
+      const response = await fetch(url, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const account = await response.json();
+      const xlmBalance = account.balances.find(b => b.asset_type === 'native');
       const balanceValue = xlmBalance ? parseFloat(xlmBalance.balance) : 0;
 
-      console.log('🔗 Direct balance fetch:', balanceValue, 'XLM');
+      console.log('🔗 Fresh balance from Stellar blockchain:', balanceValue, 'XLM');
       setBalance({ xlm: balanceValue });
       
     } catch (err) {
@@ -122,14 +175,14 @@ function App() {
         setTransactions(txPrev => [cancellationRecord, ...txPrev]);
         
         console.log('❌ Subscription cancelled:', cancelledSub.service);
-        alert(`✅ ${cancelledSub.service} subscription cancelled.`);
+        toast.warning('Subscription Cancelled', `${cancelledSub.service} has been cancelled`);
         
         return prev.filter(sub => sub.id !== subId);
       }
       
       return prev;
     });
-  }, []);
+  }, [toast]);
 
   // ✅ FIXED: Completely rewritten payment handler with proper state updates
   const handlePaymentProcessed = useCallback((transaction) => {
@@ -173,66 +226,248 @@ function App() {
       xlm: Math.max(0, prevBalance.xlm - transaction.amount)
     }));
     
-    // 5. ✅ Fetch real balance after Stellar confirmation time (4 seconds)
-    console.log('⏳ Scheduling blockchain balance fetch in 4 seconds...');
-    setTimeout(() => {
-      updateBalanceDirectly();
-    }, 4000);
+    // 5. Show success toast
+    toast.success('Payment Successful', `${transaction.amount} XLM sent for ${transaction.service}`);
     
-  }, [updateBalanceDirectly]);
+    // 6. ✅ Refresh balance from blockchain after confirmation (8 seconds to be safe)
+    console.log('⏳ Scheduling balance refresh in 8 seconds...');
+    setTimeout(() => {
+      console.log('🔄 Fetching confirmed balance from blockchain...');
+      updateBalanceDirectly();
+    }, 8000);
+    
+  }, [toast, updateBalanceDirectly]);
+
+  // Recurring payments handler
+  const handlePaymentDue = useCallback(({ subscription, nextBilling }) => {
+    toast.warning(
+      'Payment Due',
+      `Your ${subscription.service} subscription (${subscription.amount} XLM) is due for renewal`,
+      8000
+    );
+    
+    // Update subscription with new billing date
+    setSubscriptions(prev => 
+      prev.map(sub => 
+        sub.id === subscription.id 
+          ? { ...sub, nextBilling, paymentDue: true }
+          : sub
+      )
+    );
+  }, [toast]);
+
+  const handlePaymentReminder = useCallback(({ subscription, daysUntilDue }) => {
+    toast.info(
+      'Upcoming Payment',
+      `${subscription.service} payment of ${subscription.amount} XLM due in ${daysUntilDue} days`,
+      6000
+    );
+  }, [toast]);
+
+  // Initialize recurring payments checker
+  const { getUpcomingPayments } = useRecurringPayments({
+    subscriptions,
+    wallet,
+    platformWallet,
+    onPaymentDue: handlePaymentDue,
+    onPaymentReminder: handlePaymentReminder,
+    enabled: !!wallet && !!platformWallet,
+  });
 
   // Calculate stats
   const activeSubscriptionsCount = subscriptions.length;
   const monthlyCost = subscriptions.reduce((total, sub) => total + sub.amount, 0);
   const totalTransactions = transactions.length;
 
+  // Show loading state while restoring session
+  if (isRestoring) {
+    return (
+      <div className="min-h-screen bg-orbit-dark flex items-center justify-center">
+        <div className="text-center">
+          <div className="relative w-20 h-20 mx-auto mb-6">
+            <div className="absolute inset-0 bg-orbit-gold/30 blur-xl rounded-full animate-pulse" />
+            <div className="relative w-full h-full flex items-center justify-center">
+              <Loader size={40} className="text-orbit-gold animate-spin" />
+            </div>
+          </div>
+          <p className="text-orbit-gray font-display tracking-wider">Restoring session...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-gray-200">
-      <header className="py-8 shadow-neumorphic-lg border-b border-yellow-500/10 sticky top-0 z-50 bg-gray-800/70 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-              <Zap size={40} className="text-yellow-400 animate-float" />
+    <div className="min-h-screen bg-[#0A0A0C] text-gray-200 relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="fixed inset-0 pointer-events-none">
+        {/* Radial glow */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-orbit-gold/[0.06] rounded-full blur-[120px]" />
+        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-orbit-gold/[0.03] rounded-full blur-[100px]" />
+        {/* Grid overlay */}
+        <div className="absolute inset-0 bg-grid opacity-30" />
+      </div>
+      
+      <header className="relative z-50 py-5 border-b border-white/[0.06] bg-[#0A0A0C]/80 backdrop-blur-2xl sticky top-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between">
+            {/* Logo */}
+            <div className="flex items-center gap-4">
+              <div className="relative group">
+                <div className="absolute inset-0 bg-orbit-gold/40 blur-2xl rounded-full group-hover:bg-orbit-gold/50 transition-all duration-500" />
+                <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-orbit-gold/20 to-orbit-gold/5 border border-orbit-gold/30 flex items-center justify-center fire-glow">
+                  <Zap size={32} className="text-orbit-gold drop-shadow-[0_0_15px_rgba(247,147,26,0.8)]" />
+                </div>
+              </div>
               <div>
-                <h1 className="text-5xl font-bold bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-400 bg-clip-text text-transparent drop-shadow-lg">
-                  Orbit
+                <h1 className="text-3xl sm:text-4xl font-display font-black tracking-[0.15em] text-gradient-gold">
+                  ORBIT
                 </h1>
-                <p className="text-yellow-600 text-lg ml-1">
-                  Subscription payments on Stellar Testnet
+                <p className="text-muted-heading mt-0.5 hidden sm:block">
+                  Stellar Subscription Payments
                 </p>
               </div>
             </div>
             
+            {/* Navigation with View Toggle for Admins */}
             {wallet && (
-              <div className="hidden md:flex items-center gap-6 text-sm">
-                <div className="text-center">
-                  <p className="text-yellow-400 font-bold">{activeSubscriptionsCount}</p>
-                  <p className="text-gray-400 text-xs">Active Subs</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-green-400 font-bold">{monthlyCost} XLM</p>
-                  <p className="text-gray-400 text-xs">Monthly</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-blue-400 font-bold">{totalTransactions}</p>
-                  <p className="text-gray-400 text-xs">Transactions</p>
-                </div>
+              <div className="flex items-center gap-3">
+                {/* View Mode Toggle - Only for admins */}
+                {isAdminWallet(wallet.publicKey) && (
+                  <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                    <button
+                      onClick={() => {
+                        setViewMode('user');
+                        setActiveTab('payments');
+                      }}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                        viewMode === 'user'
+                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <User size={16} />
+                      <span className="hidden sm:inline">User</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setViewMode('admin');
+                        setActiveTab('transactions');
+                      }}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                        viewMode === 'admin'
+                          ? 'bg-orbit-gold/20 text-orbit-gold border border-orbit-gold/30'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <Shield size={16} />
+                      <span className="hidden sm:inline">Admin</span>
+                    </button>
+                  </div>
+                )}
+                
+                {/* Contextual Tabs based on View Mode */}
+                <nav className="flex items-center gap-1 p-1 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+                  {viewMode === 'user' || !isAdminWallet(wallet.publicKey) ? (
+                    /* User Mode Tabs */
+                    <button
+                      onClick={() => setActiveTab('payments')}
+                      className={`tab-btn ${activeTab === 'payments' ? 'tab-btn-active' : 'tab-btn-inactive'}`}
+                    >
+                      <CreditCard size={18} />
+                      <span className="hidden sm:inline">Payments</span>
+                    </button>
+                  ) : (
+                    /* Admin Mode Tabs */
+                    <>
+                      <button
+                        onClick={() => setActiveTab('transactions')}
+                        className={`tab-btn ${activeTab === 'transactions' ? 'tab-btn-active' : 'tab-btn-inactive'}`}
+                      >
+                        <Activity size={18} />
+                        <span className="hidden sm:inline">Transactions</span>
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('users')}
+                        className={`tab-btn ${activeTab === 'users' ? 'tab-btn-active' : 'tab-btn-inactive'}`}
+                      >
+                        <Users size={18} />
+                        <span className="hidden sm:inline">Users</span>
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('providers')}
+                        className={`tab-btn ${activeTab === 'providers' ? 'tab-btn-active' : 'tab-btn-inactive'}`}
+                      >
+                        <Settings size={18} />
+                        <span className="hidden sm:inline">Providers</span>
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('dashboard')}
+                        className={`tab-btn ${activeTab === 'dashboard' ? 'tab-btn-active' : 'tab-btn-inactive'}`}
+                      >
+                        <LayoutDashboard size={18} />
+                        <span className="hidden sm:inline">Dashboard</span>
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('settings')}
+                        className={`tab-btn ${activeTab === 'settings' ? 'tab-btn-active' : 'tab-btn-inactive'}`}
+                      >
+                        <Cog size={18} />
+                        <span className="hidden sm:inline">Settings</span>
+                      </button>
+                    </>
+                  )}
+                </nav>
               </div>
             )}
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
-            {!wallet ? (
-              <div className="text-center">
-                <WalletConnect onConnect={handleWalletConnect} />
-              </div>
-            ) : (
-              <>
-                {/* ✅ FIXED: Passing stable, memoized callbacks */}
+      <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-14">
+        {!wallet ? (
+          /* Not logged in - show connect wallet */
+          <div className="max-w-xl mx-auto text-center animate-fade-in">
+            {/* Hero Text */}
+            <div className="mb-10">
+              <h2 className="text-4xl sm:text-5xl font-display font-black tracking-wide text-white mb-4">
+                The Future of <span className="text-fire">Payments</span>
+              </h2>
+              <p className="text-orbit-gray text-lg max-w-md mx-auto">
+                Pay for your subscriptions with Stellar. Fast, cheap, and borderless.
+              </p>
+            </div>
+            <MultiWalletConnect onConnect={handleWalletConnect} />
+          </div>
+        ) : viewMode === 'admin' && activeTab === 'transactions' && isAdminWallet(wallet?.publicKey) ? (
+          /* Admin Transactions Tab */
+          <div className="animate-fade-in">
+            <AdminTransactions />
+          </div>
+        ) : viewMode === 'admin' && activeTab === 'users' && isAdminWallet(wallet?.publicKey) ? (
+          /* Admin Users Tab */
+          <div className="animate-fade-in">
+            <UsersManager />
+          </div>
+        ) : viewMode === 'admin' && activeTab === 'providers' && isAdminWallet(wallet?.publicKey) ? (
+          /* Service Providers Management Tab - Admin Only */
+          <div className="animate-fade-in">
+            <ServiceProviderManager />
+          </div>
+        ) : viewMode === 'admin' && activeTab === 'dashboard' && isAdminWallet(wallet?.publicKey) ? (
+          /* Admin Dashboard Tab - Admin Only */
+          <div className="animate-fade-in">
+            <AdminDashboard />
+          </div>
+        ) : viewMode === 'admin' && activeTab === 'settings' && isAdminWallet(wallet?.publicKey) ? (
+          /* Admin Settings Tab */
+          <div className="animate-fade-in">
+            <SettingsPanel />
+          </div>
+        ) : (
+          /* Payments Tab (default) */
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fade-in">
+            {/* Main Content */}
+            <div className="lg:col-span-8 space-y-8">
                 <BalanceDisplay 
                   balance={balance} 
                   wallet={wallet}
@@ -240,36 +475,6 @@ function App() {
                   onManualRefresh={updateBalanceDirectly}
                   lastTxHash={lastTxHash}
                 />
-                
-                <div className="space-y-4">
-                  {!platformWallet && (
-                    <div className="card-neumorphic p-6 bg-blue-900/20 border-blue-500/30">
-                      <h3 className="text-blue-400 font-bold text-lg mb-4">Connect Platform Wallet</h3>
-                      <p className="text-gray-300 text-sm mb-4">
-                        Connect your platform wallet to receive payments from subscribers. 
-                      </p>
-                      <WalletConnect 
-                        onConnect={handlePlatformWalletConnect} 
-                        buttonText="Connect Platform Wallet" 
-                      />
-                    </div>
-                  )}
-                  
-                  {platformWallet && (
-                    <div className="card-neumorphic p-4 bg-green-900/20 border-green-500/30">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-green-400 text-sm font-semibold">
-                            Platform Wallet Connected ✅
-                          </p>
-                          <p className="text-gray-400 text-xs font-mono mt-1">
-                            {platformWallet.publicKey.slice(0, 12)}...{platformWallet.publicKey.slice(-12)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
                 
                 <XLMFaucet
                   wallet={wallet}
@@ -283,27 +488,28 @@ function App() {
                   onSubscribe={handleSubscribe}
                   onPayment={handlePaymentProcessed}
                 />
-              </>
-            )}
-          </div>
+            </div>
 
-          <div className="space-y-6">
-            {wallet && (
-              <>
-                <div className="card-neumorphic p-4 bg-gradient-to-br from-gray-800 to-gray-900">
-                  <h4 className="text-yellow-400 font-bold text-sm mb-3">Quick Stats</h4>
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div>
-                      <p className="text-2xl font-bold text-yellow-400">{activeSubscriptionsCount}</p>
-                      <p className="text-gray-400 text-xs mt-1">Active</p>
+            {/* Sidebar */}
+            <div className="lg:col-span-4 space-y-8">
+                {/* Quick Stats Card */}
+                <div className="card-hero p-6 border-gradient">
+                  <h4 className="text-muted-heading mb-6 flex items-center gap-2">
+                    <div className="w-1.5 h-4 rounded-full bg-orbit-gold" />
+                    Quick Stats
+                  </h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="stat-card text-center">
+                      <p className="text-3xl font-display font-black text-orbit-gold">{activeSubscriptionsCount}</p>
+                      <p className="text-muted-heading mt-2">Active</p>
                     </div>
-                    <div>
-                      <p className="text-2xl font-bold text-green-400">{monthlyCost}</p>
-                      <p className="text-gray-400 text-xs mt-1">XLM/mo</p>
+                    <div className="stat-card text-center">
+                      <p className="text-3xl font-display font-black text-emerald-400">{monthlyCost}</p>
+                      <p className="text-muted-heading mt-2">XLM/mo</p>
                     </div>
-                    <div>
-                      <p className="text-2xl font-bold text-blue-400">{totalTransactions}</p>
-                      <p className="text-gray-400 text-xs mt-1">Total TX</p>
+                    <div className="stat-card text-center">
+                      <p className="text-3xl font-display font-black text-blue-400">{totalTransactions}</p>
+                      <p className="text-muted-heading mt-2">Total TX</p>
                     </div>
                   </div>
                 </div>
@@ -313,55 +519,34 @@ function App() {
                   subscriptions={subscriptions} 
                   onCancelSubscription={handleCancelSubscription}
                 />
-              </>
-            )}
-            
-            {!wallet && (
-              <div className="card-neumorphic p-6 text-center">
-                <Zap size={48} className="mx-auto text-yellow-400 mb-4 animate-pulse" />
-                <h3 className="text-yellow-400 font-bold text-lg mb-2">Welcome to Orbit</h3>
-                <p className="text-gray-300 text-sm mb-4">
-                  Connect your Freighter wallet to start managing subscriptions.
-                </p>
-                <div className="space-y-2 text-xs text-gray-400">
-                  <p>✨ Pay with XLM - No trustlines needed</p>
-                  <p>⚡ Instant transactions on Stellar Testnet</p>
-                  <p>🔒 Secure Freighter integration</p>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
       </main>
 
-      <footer className="py-6 mt-12 border-t border-yellow-500/10 bg-gray-900/50">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="text-center md:text-left mb-4 md:mb-0">
-              <p className="text-yellow-600 text-sm">
-                Built with ⚡ on Stellar Testnet
+      <footer className="relative z-10 py-10 mt-20 border-t border-white/[0.06] bg-[#0A0A0C]/50 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-8">
+            <div className="text-center md:text-left">
+              <div className="flex items-center gap-3 justify-center md:justify-start mb-3">
+                <Zap size={24} className="text-orbit-gold" />
+                <span className="font-display font-black text-xl tracking-wider text-white">ORBIT</span>
+              </div>
+              <p className="text-orbit-gray text-sm">
+                Built with <span className="text-orbit-gold">⚡</span> on Stellar Testnet
               </p>
-              <p className="text-gray-500 text-xs mt-1">
-                Real wallets • Real balances • XLM Payments • Powered by Friendbot
+              <p className="text-orbit-gray-dark text-xs mt-1">
+                Real wallets • Real balances • XLM Payments
               </p>
             </div>
             
-            <div className="flex items-center gap-4 text-xs text-gray-400">
+            <div className="flex items-center gap-4">
               {wallet && (
-                <div className="text-center">
-                  <p className="text-yellow-400 font-mono">
+                <div className="px-5 py-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] text-center">
+                  <p className="text-orbit-gold font-mono text-sm font-bold">
                     {wallet.publicKey.slice(0, 8)}...{wallet.publicKey.slice(-8)}
                   </p>
-                  <p className="text-gray-500">Connected Wallet</p>
-                </div>
-              )}
-              
-              {platformWallet && (
-                <div className="text-center">
-                  <p className="text-green-400 font-mono">
-                    {platformWallet.publicKey.slice(0, 8)}...{platformWallet.publicKey.slice(-8)}
-                  </p>
-                  <p className="text-gray-500">Platform Wallet</p>
+                  <p className="text-muted-heading mt-1">Connected Wallet</p>
                 </div>
               )}
             </div>
