@@ -229,33 +229,70 @@ npx cap open android
 
 ---
 
+## � Documentation
+
+Comprehensive documentation is available in the [docs/](docs/) folder:
+
+| Document | Description |
+|----------|-------------|
+| [Business Model](docs/BUSINESS_MODEL.md) | Revenue model, market analysis, financial projections |
+| [Architecture](docs/ARCHITECTURE.md) | System design, data models, security architecture |
+| [User Guide](docs/USER_GUIDE.md) | End-user guide for payments and subscriptions |
+| [Admin Guide](docs/ADMIN_GUIDE.md) | Platform administration and management |
+| [API Reference](docs/API_REFERENCE.md) | Stellar API, Freighter API, data structures |
+| [Security](docs/SECURITY.md) | Security model, compliance, best practices |
+| [Deployment](docs/DEPLOYMENT.md) | Production deployment guide (Vercel, Netlify, Docker) |
+| [Contributing](docs/CONTRIBUTING.md) | Contribution guidelines and coding standards |
+| [Roadmap](docs/ROADMAP.md) | Product roadmap and planned features |
+| [Changelog](docs/CHANGELOG.md) | Version history and release notes |
+| [Pitch Deck](docs/PITCH_DECK.md) | Investor presentation |
+
+---
+
 ## 🛣️ Roadmap
 
-- [ ] Recurring payment automation
-- [ ] Multi-currency support (USDC, etc.)
-- [ ] Email notifications
-- [ ] Provider dashboard portal
-- [ ] Webhook integrations
-- [ ] Mainnet deployment guide
+### Q1 2025
+- [ ] Payment splitting (atomic multi-destination)
+- [ ] Backend infrastructure
+- [ ] Multi-wallet support (Lobstr, xBull)
+
+### Q2 2025
+- [ ] Mobile apps (iOS/Android)
+- [ ] Public API
+- [ ] Mainnet launch
+
+### Q3 2025+
+- [ ] Multi-currency support (USDC)
+- [ ] Provider self-service portal
+- [ ] Enterprise features
+
+See [full roadmap](docs/ROADMAP.md) for details.
 
 ---
 
 ## 📄 License
 
-MIT License - feel free to use this for your own projects!
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request.
+Contributions are welcome! Please read our [Contributing Guide](docs/CONTRIBUTING.md) first.
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ---
 
 ## 📞 Support
 
-- Create an issue on GitHub
-- Check Stellar documentation at [developers.stellar.org](https://developers.stellar.org)
+- 📖 Check the [documentation](docs/)
+- 🐛 Create an issue on GitHub
+- 💬 Join discussions
+- 📚 Stellar docs at [developers.stellar.org](https://developers.stellar.org)
 
 ---
 
