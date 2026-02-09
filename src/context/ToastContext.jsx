@@ -3,7 +3,6 @@ import Toast from '../components/Toast';
 
 const ToastContext = createContext(null);
 
-// Custom hook to use toast notifications
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {

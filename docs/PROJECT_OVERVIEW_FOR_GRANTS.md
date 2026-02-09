@@ -42,10 +42,21 @@ Orbit provides a blockchain-based, non-custodial platform for subscription payme
 - **Enterprise Integrations:** Custom pricing for large partners
 
 ### 4.2 Target Market
-- Digital service providers (SaaS, content, education)
-- NGOs and microfinance organizations
-- Content creators and influencers
-- Startups and fintechs
+
+**Primary: Crypto Content Creators (~26,000 globally)**
+- **Crypto YouTubers** (~15,000) - Premium video content, communities
+- **Newsletter Writers** (~3,000) - Premium research, market analysis
+- **Discord/Telegram Owners** (~8,000) - VIP community access, alpha groups
+
+**Secondary (Future):**
+- Trading Signal Providers (~10,000)
+- Web3 Tool/API Developers (~5,000)
+- Crypto Educators & Courses (~8,000)
+
+**Why This Market:**
+- Creators and subscribers already have crypto wallets
+- Frustrated with Patreon's 5-12% fees
+- Want to accept crypto from their crypto-native audience
 
 ### 4.3 Competitive Advantage
 - Non-custodial (no custody risk, regulatory advantage)

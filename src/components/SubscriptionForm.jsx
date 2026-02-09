@@ -4,7 +4,6 @@ import * as StellarSdk from 'stellar-sdk';
 import { isConnected, signTransaction as freighterSignTransaction } from '@stellar/freighter-api';
 import { usePriceConverter } from '../hooks/usePriceConverter';
 import { useToast } from '../context/ToastContext';
-import { useWalletService } from '../hooks/useWalletService';
 
 const PLATFORM_FEE_PERCENT = 2; // 2% platform fee
 
@@ -24,7 +23,6 @@ function SubscriptionForm({ wallet, platformWallet, onSubscribe, onPayment }) {
   const [error, setError] = useState(null);
   const [services, setServices] = useState([]);
   const toast = useToast();
-  const walletService = useWalletService();
   
   // Get XLM/USD conversion
   const { xlmPrice, change24h, convertToUSD, loading: priceLoading } = usePriceConverter();
@@ -258,32 +256,25 @@ function SubscriptionForm({ wallet, platformWallet, onSubscribe, onPayment }) {
 
       let signedTransaction;
       
-      // Determine signing method based on wallet type
-      if (wallet.type === 'builtin' || wallet.type === 'imported' || wallet.hasSecretKey) {
-        // Sign with built-in wallet service (secret key)
-        console.log('Signing with built-in wallet...');
-        signedTransaction = await walletService.signTransaction(transaction);
-      } else {
-        // Sign with Freighter
-        console.log('Signing with Freighter...');
-        const connected = await isConnected();
-        if (!connected.isConnected) {
-          throw new Error('Freighter wallet not connected');
-        }
-
-        const signedResult = await freighterSignTransaction(transaction.toXDR(), {
-          networkPassphrase: StellarSdk.Networks.TESTNET,
-        });
-
-        if (signedResult.error) {
-          throw new Error(signedResult.error);
-        }
-
-        signedTransaction = StellarSdk.TransactionBuilder.fromXDR(
-          signedResult.signedTxXdr,
-          StellarSdk.Networks.TESTNET
-        );
+      // Sign with Freighter
+      console.log('Signing with Freighter...');
+      const connected = await isConnected();
+      if (!connected.isConnected) {
+        throw new Error('Freighter wallet not connected');
       }
+
+      const signedResult = await freighterSignTransaction(transaction.toXDR(), {
+        networkPassphrase: StellarSdk.Networks.TESTNET,
+      });
+
+      if (signedResult.error) {
+        throw new Error(signedResult.error);
+      }
+
+      signedTransaction = StellarSdk.TransactionBuilder.fromXDR(
+        signedResult.signedTxXdr,
+        StellarSdk.Networks.TESTNET
+      );
 
       console.log('Submitting split payment...');
       const result = await server.submitTransaction(signedTransaction);

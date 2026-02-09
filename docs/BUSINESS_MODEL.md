@@ -73,26 +73,53 @@ User pays $100 subscription
 
 ## 🎯 Target Market
 
-### Primary Market: Digital Service Providers
+### Primary Market: Crypto Content Creators (~26,000 globally)
 
-- **SaaS Companies** - Software subscriptions
-- **Content Creators** - Patreon-style memberships
-- **Media Platforms** - Streaming services
-- **Gaming** - In-game subscriptions
-- **Education** - Online course platforms
+Orbit targets crypto-native creators who want to monetize their audience with subscription payments.
 
-### Secondary Market: Crypto-Native Businesses
+#### Tier 1: Crypto YouTubers & Video Creators (~15,000)
+- **Who:** YouTube, TikTok, Twitch creators covering crypto/Web3
+- **What they sell:** Premium videos, early access, private communities
+- **Price range:** $5-25/month
+- **Current tools:** Patreon (5-12% fees), Ko-fi, Buy Me a Coffee
+- **Pain point:** "My crypto audience can't pay me with crypto"
 
-- **DeFi Protocols** - Premium features
-- **NFT Platforms** - Membership access
-- **DAOs** - Contribution payments
-- **Web3 Services** - API subscriptions
+#### Tier 2: Newsletter Writers (~3,000)
+- **Who:** Substack, Beehiiv, Ghost writers covering crypto markets
+- **What they sell:** Premium research, analysis, alpha
+- **Price range:** $10-50/month
+- **Current tools:** Substack (10% fees), Stripe
+- **Pain point:** "High fees eat into my subscription revenue"
+
+#### Tier 3: Discord/Telegram Community Owners (~8,000)
+- **Who:** Admins running paid crypto communities
+- **What they sell:** VIP access, signals, networking, alpha
+- **Price range:** $15-100/month
+- **Current tools:** Manual wallet payments, Launchpass
+- **Pain point:** "Managing payments manually is a nightmare"
+
+### Secondary Markets (Future)
+
+| Market | Size | Status |
+|--------|------|--------|
+| Trading Signal Providers | ~10,000 | Phase 2 |
+| Web3 Tool/API Developers | ~5,000 | Phase 2 |
+| Crypto Educators & Courses | ~8,000 | Phase 2 |
+| NFT Artists | ~5,000 | Phase 3 |
+
+### Why Crypto Creators?
+
+1. **Already have crypto wallets** - No onboarding friction
+2. **Audience holds crypto** - Subscribers can pay immediately
+3. **Frustrated with current tools** - Patreon charges 5-12%
+4. **Vocal on social media** - Will promote Orbit organically
+5. **Clear subscription model** - Free content → Paid premium
 
 ### Geographic Focus
 
-1. **Phase 1:** Crypto-forward markets (US, EU, Singapore, UAE)
-2. **Phase 2:** Emerging markets (Africa, Southeast Asia, Latin America)
-3. **Phase 3:** Global expansion
+1. **Phase 1:** Global English-speaking crypto creators
+2. **Phase 2:** Regional expansion (LATAM, Africa, SEA)
+3. **Phase 3:** Enterprise & white-label
 
 ---
 
@@ -149,33 +176,38 @@ User pays $100 subscription
 
 ## 🚀 Go-to-Market Strategy
 
-### Phase 1: Community Building (Months 1-3)
+### Phase 1: Seed Creators (Months 1-2)
 
 - Launch on Stellar testnet ✅
 - Open source on GitHub ✅
-- Engage Stellar developer community
-- Content marketing (tutorials, blog posts)
+- Identify 20 mid-tier crypto YouTubers (10K-50K subscribers)
+- Direct outreach via Twitter/email
+- Offer 0% fees for first 3 months (early adopter incentive)
+- Onboard 10 creators with hands-on support
 
-### Phase 2: Early Adopters (Months 4-6)
+### Phase 2: Creator-Led Growth (Months 3-4)
 
 - Launch on Stellar mainnet
-- Onboard 10 pilot service providers
-- Gather feedback and iterate
-- Case studies and testimonials
+- Each creator promotes to their audience
+- Target: 10 creators × 50 subscribers = 500 paying users
+- Collect testimonials and case studies
+- Expand to newsletter writers and Discord owners
 
-### Phase 3: Growth (Months 7-12)
+### Phase 3: Viral Expansion (Months 5-8)
 
-- Marketing campaigns
-- Partnership with Stellar ecosystem projects
+- Launch on Product Hunt (Web3 category)
+- Partner with Stellar ecosystem projects
+- Add USDC support for price stability
+- Target: 50 creators, 2,500 subscribers
+- Launch referral program for creators
+
+### Phase 4: Scale (Months 9-12+)
+
 - API launch for developers
 - Mobile app release
-
-### Phase 4: Scale (Year 2+)
-
+- Expand to trading signals & educators market
 - White-label B2B offering
-- Multi-chain expansion (Ethereum, Solana)
-- Enterprise features
-- Fiat integration
+- Target: 200 creators, 10,000 subscribers
 
 ---
 

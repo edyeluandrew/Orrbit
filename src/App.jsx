@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as StellarSdk from 'stellar-sdk';
-import { Zap, Loader, CreditCard, Settings, LayoutDashboard, User, Shield, Activity, Users, Cog } from 'lucide-react';
-import MultiWalletConnect from './components/MultiWalletConnect';
+import { Zap, Loader, CreditCard, Settings, LayoutDashboard, User, Shield, Activity, Cog } from 'lucide-react';
+import FreighterConnect from './components/FreighterConnect';
 import BalanceDisplay from './components/BalanceDisplay';
 import SubscriptionForm from './components/SubscriptionForm';
 import TransactionFeed from './components/TransactionFeed';
@@ -9,12 +9,9 @@ import XLMFaucet from './components/XLMFaucet';
 import ServiceProviderManager from './components/ServiceProviderManager';
 import AdminDashboard from './components/AdminDashboard';
 import AdminTransactions from './components/AdminTransactions';
-import UsersManager from './components/UsersManager';
 import SettingsPanel from './components/SettingsPanel';
 import { useToast } from './context/ToastContext';
 import useWalletSession from './hooks/useWalletSession';
-import useRecurringPayments from './hooks/useRecurringPayments';
-import { useWalletService } from './hooks/useWalletService';
 import { getPlatformWallet, isAdminWallet } from './config/platform';
 
 function App() {
@@ -28,9 +25,6 @@ function App() {
   
   // Platform wallet from config (no user setup needed)
   const platformWallet = getPlatformWallet();
-  
-  // Wallet service for built-in/imported wallets
-  const walletService = useWalletService();
 
   // Toast notifications
   const toast = useToast();
@@ -238,42 +232,6 @@ function App() {
     
   }, [toast, updateBalanceDirectly]);
 
-  // Recurring payments handler
-  const handlePaymentDue = useCallback(({ subscription, nextBilling }) => {
-    toast.warning(
-      'Payment Due',
-      `Your ${subscription.service} subscription (${subscription.amount} XLM) is due for renewal`,
-      8000
-    );
-    
-    // Update subscription with new billing date
-    setSubscriptions(prev => 
-      prev.map(sub => 
-        sub.id === subscription.id 
-          ? { ...sub, nextBilling, paymentDue: true }
-          : sub
-      )
-    );
-  }, [toast]);
-
-  const handlePaymentReminder = useCallback(({ subscription, daysUntilDue }) => {
-    toast.info(
-      'Upcoming Payment',
-      `${subscription.service} payment of ${subscription.amount} XLM due in ${daysUntilDue} days`,
-      6000
-    );
-  }, [toast]);
-
-  // Initialize recurring payments checker
-  const { getUpcomingPayments } = useRecurringPayments({
-    subscriptions,
-    wallet,
-    platformWallet,
-    onPaymentDue: handlePaymentDue,
-    onPaymentReminder: handlePaymentReminder,
-    enabled: !!wallet && !!platformWallet,
-  });
-
   // Calculate stats
   const activeSubscriptionsCount = subscriptions.length;
   const monthlyCost = subscriptions.reduce((total, sub) => total + sub.amount, 0);
@@ -387,13 +345,6 @@ function App() {
                         <span className="hidden sm:inline">Transactions</span>
                       </button>
                       <button
-                        onClick={() => setActiveTab('users')}
-                        className={`tab-btn ${activeTab === 'users' ? 'tab-btn-active' : 'tab-btn-inactive'}`}
-                      >
-                        <Users size={18} />
-                        <span className="hidden sm:inline">Users</span>
-                      </button>
-                      <button
                         onClick={() => setActiveTab('providers')}
                         className={`tab-btn ${activeTab === 'providers' ? 'tab-btn-active' : 'tab-btn-inactive'}`}
                       >
@@ -436,17 +387,12 @@ function App() {
                 Pay for your subscriptions with Stellar. Fast, cheap, and borderless.
               </p>
             </div>
-            <MultiWalletConnect onConnect={handleWalletConnect} />
+            <FreighterConnect onConnect={handleWalletConnect} />
           </div>
         ) : viewMode === 'admin' && activeTab === 'transactions' && isAdminWallet(wallet?.publicKey) ? (
           /* Admin Transactions Tab */
           <div className="animate-fade-in">
             <AdminTransactions />
-          </div>
-        ) : viewMode === 'admin' && activeTab === 'users' && isAdminWallet(wallet?.publicKey) ? (
-          /* Admin Users Tab */
-          <div className="animate-fade-in">
-            <UsersManager />
           </div>
         ) : viewMode === 'admin' && activeTab === 'providers' && isAdminWallet(wallet?.publicKey) ? (
           /* Service Providers Management Tab - Admin Only */
