@@ -63,30 +63,46 @@ User pays 100 XLM
 git clone https://github.com/yourusername/orbit.git
 cd orbit
 
-# Install dependencies
-npm install
+# Install all dependencies
+npm run install:all
 
-# Copy environment file
-cp .env.example .env
+# Or install separately:
+cd frontend && npm install
+cd ../backend && npm install
 
-# Start development server
+# Copy environment files
+cp frontend/.env.example frontend/.env
+cp backend/.env.example backend/.env
+
+# Start both frontend and backend
 npm run dev
+
+# Or start separately:
+npm run dev:frontend  # Frontend at http://localhost:5173
+npm run dev:backend   # Backend at http://localhost:3001
 ```
 
-The app will be available at `http://localhost:5173`
+### Database Setup
+
+```bash
+# Run database migrations
+npm run db:migrate
+
+# Seed with sample data (optional)
+npm run db:seed
+```
 
 ---
 
 ## ⚙️ Configuration
 
-Create a `.env` file in the root directory:
+### Frontend (`frontend/.env`)
 
 ```env
 # Platform wallet address (receives the platform fee)
 VITE_PLATFORM_WALLET=GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 # Admin wallet addresses (comma-separated)
-# These wallets can access the admin panel
 VITE_ADMIN_WALLETS=GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 # Platform fee percentage (e.g., 2 = 2%)
@@ -94,6 +110,37 @@ VITE_PLATFORM_FEE_PERCENT=2
 
 # Network: testnet or mainnet
 VITE_NETWORK=testnet
+
+# Backend API URL
+VITE_API_URL=http://localhost:3001/api
+
+# WebSocket URL
+VITE_WS_URL=ws://localhost:3001
+```
+
+### Backend (`backend/.env`)
+
+```env
+# Database
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/orbit_dev
+DATABASE_SSL=false
+
+# Stellar Network
+STELLAR_NETWORK=testnet
+STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
+
+# Platform
+PLATFORM_WALLET_PUBLIC=GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+PLATFORM_FEE_PERCENT=2
+
+# Auth
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
+JWT_EXPIRES_IN=7d
+REQUIRE_SIGNATURE=false
+
+# Security
+INTERNAL_API_KEY=your-internal-api-key
+STELLAR_WEBHOOK_SECRET=your-webhook-secret
 ```
 
 ### Generating Wallets
@@ -132,34 +179,76 @@ VITE_NETWORK=testnet
 
 ```
 orbit/
-├── src/
-│   ├── components/
-│   │   ├── AdminDashboard.jsx      # Analytics dashboard
-│   │   ├── AdminTransactions.jsx   # Live transaction feed
-│   │   ├── BalanceDisplay.jsx      # Wallet balance widget
-│   │   ├── MultiWalletConnect.jsx  # Wallet connection UI
-│   │   ├── ServiceProviderManager.jsx  # Provider CRUD
-│   │   ├── SettingsPanel.jsx       # Platform settings
-│   │   ├── SubscriptionForm.jsx    # Payment form
-│   │   ├── TransactionFeed.jsx     # User transaction history
-│   │   ├── UsersManager.jsx        # User analytics
-│   │   └── XLMFaucet.jsx          # Testnet faucet
-│   ├── config/
-│   │   └── platform.js            # Environment config loader
-│   ├── context/
-│   │   └── ToastContext.jsx       # Toast notifications
-│   ├── hooks/
-│   │   ├── usePriceConverter.js   # XLM/USD conversion
-│   │   ├── useRecurringPayments.js # Subscription reminders
-│   │   ├── useWalletService.js    # Wallet operations
-│   │   └── useWalletSession.js    # Session persistence
-│   ├── App.jsx                    # Main app component
-│   ├── App.css                    # Custom styles
-│   └── main.jsx                   # Entry point
-├── .env                           # Environment variables
-├── package.json
-├── tailwind.config.js
-└── vite.config.js
+├── frontend/                       # React Frontend
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── AdminDashboard.jsx      # Analytics dashboard
+│   │   │   ├── AdminTransactions.jsx   # Live transaction feed
+│   │   │   ├── BalanceDisplay.jsx      # Wallet balance widget
+│   │   │   ├── CreatorDiscovery.jsx    # Creator browsing
+│   │   │   ├── CreatorProfile.jsx      # Creator profile page
+│   │   │   ├── FreighterConnect.jsx    # Freighter wallet connection
+│   │   │   ├── Onboarding.jsx          # User onboarding flow
+│   │   │   ├── ServiceProviderManager.jsx  # Provider CRUD
+│   │   │   ├── SettingsPanel.jsx       # Platform settings
+│   │   │   ├── SubscriberProfile.jsx   # Subscriber dashboard
+│   │   │   ├── SubscriptionForm.jsx    # Payment form
+│   │   │   ├── TransactionFeed.jsx     # Transaction history
+│   │   │   ├── WalletConnect.jsx       # Multi-wallet support
+│   │   │   └── XLMFaucet.jsx           # Testnet faucet
+│   │   ├── config/
+│   │   │   └── platform.js             # Environment config loader
+│   │   ├── context/
+│   │   │   ├── ThemeContext.jsx        # Dark/light mode
+│   │   │   └── ToastContext.jsx        # Toast notifications
+│   │   ├── hooks/
+│   │   │   ├── useApi.js               # Backend API calls
+│   │   │   ├── usePriceConverter.js    # XLM/USD conversion
+│   │   │   ├── usePullToRefresh.js     # Mobile pull-to-refresh
+│   │   │   ├── useUserProfile.js       # User profile management
+│   │   │   └── useWalletSession.js     # Wallet session persistence
+│   │   ├── services/
+│   │   │   └── api.js                  # API service layer
+│   │   ├── App.jsx                     # Main app component
+│   │   └── main.jsx                    # Entry point
+│   ├── .env.example                    # Frontend env template
+│   ├── package.json
+│   ├── vite.config.js
+│   └── tailwind.config.js
+│
+├── backend/                        # Fastify Backend
+│   ├── src/
+│   │   ├── routes/
+│   │   │   ├── admin.js                # Admin endpoints
+│   │   │   ├── auth.js                 # Wallet authentication
+│   │   │   ├── creators.js             # Creator management
+│   │   │   ├── subscriptions.js        # Subscription handling
+│   │   │   ├── transactions.js         # Transaction history
+│   │   │   ├── users.js                # User profiles
+│   │   │   └── webhooks.js             # Stellar webhooks
+│   │   ├── services/
+│   │   │   └── stellar.js              # Stellar blockchain integration
+│   │   ├── db/
+│   │   │   ├── index.js                # Database connection & ORM
+│   │   │   ├── migrate.js              # Database migrations
+│   │   │   └── seed.js                 # Sample data seeding
+│   │   ├── websocket/
+│   │   │   └── index.js                # Real-time notifications
+│   │   ├── workers/
+│   │   │   └── renewalWorker.js        # Subscription renewal cron
+│   │   └── index.js                    # Server entry point
+│   ├── .env.example                    # Backend env template
+│   └── package.json
+│
+├── docs/                           # Documentation
+│   ├── API_REFERENCE.md
+│   ├── ARCHITECTURE.md
+│   ├── DEPLOYMENT.md
+│   └── ...
+│
+├── docker-compose.yml              # Docker setup
+├── package.json                    # Root workspace config
+└── README.md
 ```
 
 ---
