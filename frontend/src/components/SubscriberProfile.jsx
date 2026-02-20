@@ -14,6 +14,10 @@ import {
   Star,
   Settings,
   ExternalLink,
+  Sparkles,
+  ArrowRight,
+  Youtube,
+  MessageCircle,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { usePriceConverter } from '../hooks/usePriceConverter';
@@ -24,6 +28,8 @@ function SubscriberProfile({
   onUpdateProfile,
   subscriptions = [],
   transactions = [],
+  hasTiers = false,
+  onBecomeCreator,
 }) {
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -223,6 +229,42 @@ function SubscriberProfile({
           <p className="text-sm text-orbit-gray max-w-sm mx-auto">
             Browse creators and subscribe to support your favorites with crypto payments.
           </p>
+        </div>
+      )}
+
+      {/* Become a Creator CTA */}
+      {!hasTiers && (
+        <div className="card-glass p-6 bg-gradient-to-br from-orbit-gold/10 to-amber-500/5 border-orbit-gold/30">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-orbit-gold/20 flex items-center justify-center flex-shrink-0">
+              <Sparkles size={28} className="text-orbit-gold" />
+            </div>
+            
+            <div className="flex-1">
+              <h3 className="text-lg font-bold text-white mb-1">Start Earning with Orbit</h3>
+              <p className="text-sm text-orbit-gray mb-3">
+                Accept crypto payments for your YouTube, Discord, Telegram, podcast, or any other content.
+              </p>
+              
+              <div className="flex flex-wrap gap-2 mb-4">
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 text-xs text-orbit-gray">
+                  <Youtube size={12} /> YouTube
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 text-xs text-orbit-gray">
+                  <MessageCircle size={12} /> Discord
+                </span>
+                <span className="text-xs text-orbit-gray">& more</span>
+              </div>
+            </div>
+            
+            <button
+              onClick={onBecomeCreator}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-orbit-gold hover:bg-orbit-gold-light text-black font-bold transition-all hover:scale-105"
+            >
+              Set Up Creator Page
+              <ArrowRight size={18} />
+            </button>
+          </div>
         </div>
       )}
     </div>

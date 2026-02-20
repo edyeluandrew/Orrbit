@@ -10,6 +10,15 @@ import {
   Sparkles,
   X,
   ChevronDown,
+  Music,
+  Palette,
+  Gamepad2,
+  Monitor,
+  BookOpen,
+  Dumbbell,
+  ChefHat,
+  Camera,
+  PenTool,
 } from 'lucide-react';
 import { Avatar } from './ui/Avatar';
 import { Badge, BadgeGroup } from './ui/Badges';
@@ -18,15 +27,15 @@ import EmptyState, { EmptySearch } from './ui/EmptyState';
 // Category definitions
 const CATEGORIES = [
   { id: 'all', label: 'All', icon: Sparkles },
-  { id: 'music', label: 'Music', icon: '🎵' },
-  { id: 'art', label: 'Art', icon: '🎨' },
-  { id: 'gaming', label: 'Gaming', icon: '🎮' },
-  { id: 'tech', label: 'Tech', icon: '💻' },
-  { id: 'education', label: 'Education', icon: '📚' },
-  { id: 'fitness', label: 'Fitness', icon: '💪' },
-  { id: 'cooking', label: 'Cooking', icon: '🍳' },
-  { id: 'photography', label: 'Photography', icon: '📷' },
-  { id: 'writing', label: 'Writing', icon: '✍️' },
+  { id: 'music', label: 'Music', icon: Music },
+  { id: 'art', label: 'Art', icon: Palette },
+  { id: 'gaming', label: 'Gaming', icon: Gamepad2 },
+  { id: 'tech', label: 'Tech', icon: Monitor },
+  { id: 'education', label: 'Education', icon: BookOpen },
+  { id: 'fitness', label: 'Fitness', icon: Dumbbell },
+  { id: 'cooking', label: 'Cooking', icon: ChefHat },
+  { id: 'photography', label: 'Photography', icon: Camera },
+  { id: 'writing', label: 'Writing', icon: PenTool },
 ];
 
 const SORT_OPTIONS = [
@@ -268,11 +277,7 @@ function CreatorDiscovery({
               }
             `}
           >
-            {typeof cat.icon === 'string' ? (
-              <span>{cat.icon}</span>
-            ) : (
-              <cat.icon size={16} />
-            )}
+            <cat.icon size={16} />
             {cat.label}
           </button>
         ))}

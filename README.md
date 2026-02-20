@@ -1,8 +1,10 @@
 # 🚀 ORBIT
 
-**Stellar-Powered Subscription Payment Platform**
+**Crypto Payment Layer for Content Creators**
 
-Orbit is a decentralized subscription payment platform built on the Stellar blockchain. It enables businesses to accept recurring XLM payments with automatic fee splitting between the platform and service providers.
+Orbit is a decentralized subscription payment platform built on the Stellar blockchain. It enables creators on YouTube, Discord, Telegram, podcasts, and other platforms to accept streaming XLM payments from their supporters.
+
+**Orbit is NOT a content hosting platform** — it's a payment layer that works with your existing content wherever it lives.
 
 ![Stellar](https://img.shields.io/badge/Stellar-Testnet-blue)
 ![React](https://img.shields.io/badge/React-19-61DAFB)
@@ -13,12 +15,20 @@ Orbit is a decentralized subscription payment platform built on the Stellar bloc
 
 ## ✨ Features
 
-### For Users
-- 🔗 **Multi-Wallet Support** - Connect via Freighter browser extension or import wallet
-- 💳 **One-Click Subscriptions** - Subscribe to services with a single transaction
-- 💰 **Real-Time Balance** - Live XLM balance with USD conversion
+### For Creators
+- 💸 **Streaming Payments** - Get paid in real-time as XLM flows to you
+- 🔗 **Link Your Platforms** - Connect YouTube, Discord, Telegram, podcasts & more
+- 💳 **Subscription Tiers** - Create multiple pricing options for supporters
+- 📊 **Creator Dashboard** - Track earnings, subscribers, and withdrawals
+- 💰 **Instant Withdrawals** - Withdraw anytime, no waiting period
+- 📈 **Low 2% Fee** - Keep 98% of every payment (vs Patreon's 5-12%)
+
+### For Supporters
+- 🔗 **Multi-Wallet Support** - Connect via Freighter browser extension
+- 💳 **Streaming Subscriptions** - XLM streams to creators in real-time
+- ↩️ **Cancel Anytime** - Get instant refund for remaining balance
+- 🔄 **Auto-Renewal** - Never lose access to your favorite creators
 - 📊 **Transaction History** - Track all your payments and subscriptions
-- 🔔 **Payment Reminders** - Get notified before subscription renewals
 - 🚰 **Testnet Faucet** - Get free test XLM for development
 
 ### For Platform Admins

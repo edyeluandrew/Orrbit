@@ -32,6 +32,7 @@ import { usePriceConverter } from '../hooks/usePriceConverter';
 import * as StellarSdk from 'stellar-sdk';
 import { isConnected, signTransaction as freighterSignTransaction, requestAccess } from '@stellar/freighter-api';
 import { PLATFORM_CONFIG } from '../config/platform';
+import { creatorsApi } from '../services/api';
 
 const PLATFORM_FEE_PERCENT = 2;
 
@@ -339,7 +340,7 @@ function CreatorProfile({
   }, [profile?.walletAddress]);
 
   // Add a new subscription tier
-  const handleAddTier = () => {
+  const handleAddTier = async () => {
     if (!newTier.name || !newTier.amount) {
       toast.error('Missing Info', 'Name and amount are required');
       return;
@@ -357,7 +358,23 @@ function CreatorProfile({
       createdAt: new Date().toISOString(),
     };
 
-    // Save to global services list
+    // Try to save to API first
+    try {
+      const response = await creatorsApi.createTier({
+        name: newTier.name,
+        priceXlm: parseFloat(newTier.amount),
+        description: newTier.description || '',
+        tierType: 'standard',
+      });
+      if (response.tier) {
+        tier.id = response.tier.id;
+        console.log('✅ Tier created in database:', response.tier.id);
+      }
+    } catch (err) {
+      console.log('API tier create failed, saving locally:', err.message);
+    }
+
+    // Also save to localStorage as fallback
     const allServices = JSON.parse(localStorage.getItem('orbit-service-providers') || '[]');
     const updatedServices = [...allServices, tier];
     localStorage.setItem('orbit-service-providers', JSON.stringify(updatedServices));
@@ -370,9 +387,18 @@ function CreatorProfile({
   };
 
   // Delete a subscription tier
-  const handleDeleteTier = (tierId) => {
+  const handleDeleteTier = async (tierId) => {
     if (!window.confirm('Delete this subscription tier? This cannot be undone.')) return;
 
+    // Try to delete from API
+    try {
+      await creatorsApi.deleteTier(tierId);
+      console.log('✅ Tier deleted from database:', tierId);
+    } catch (err) {
+      console.log('API tier delete failed:', err.message);
+    }
+
+    // Also remove from localStorage
     const allServices = JSON.parse(localStorage.getItem('orbit-service-providers') || '[]');
     const updatedServices = allServices.filter(s => s.id !== tierId);
     localStorage.setItem('orbit-service-providers', JSON.stringify(updatedServices));
@@ -1015,24 +1041,61 @@ function CreatorProfile({
             ))}
           </div>
         ) : (
-          <div className="text-center py-8">
-            <Star size={32} className="mx-auto text-gray-600 mb-3" />
-            <p className="text-gray-500">
-              {isOwnProfile 
-                ? "You haven't created any subscription tiers yet" 
-                : "This creator hasn't set up subscription tiers yet"
-              }
-            </p>
-            {isOwnProfile && (
-              <button
-                onClick={() => setShowAddTier(true)}
-                className="mt-4 px-4 py-2 rounded-lg bg-orbit-gold/10 border border-orbit-gold/30 text-orbit-gold font-medium hover:bg-orbit-gold hover:text-black transition-all"
-              >
-                <Plus size={16} className="inline mr-2" />
-                Create Your First Tier
-              </button>
-            )}
-          </div>
+          isOwnProfile ? (
+            /* First-time creator setup banner */
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-orbit-gold/20 via-orbit-gold/10 to-transparent border border-orbit-gold/30 p-6">
+              {/* Decorative elements */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-orbit-gold/10 rounded-full blur-3xl" />
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl" />
+              
+              <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-orbit-gold/20 flex items-center justify-center">
+                    <Zap size={24} className="text-orbit-gold" />
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-display font-bold text-white">
+                      Let's Set Up Your First Tier!
+                    </h4>
+                    <p className="text-sm text-gray-400">
+                      Start earning with subscription tiers
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm font-bold">1</div>
+                    <span className="text-sm text-gray-300">Create a tier</span>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
+                    <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 text-sm font-bold">2</div>
+                    <span className="text-sm text-gray-300">Share your link</span>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
+                    <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 text-sm font-bold">3</div>
+                    <span className="text-sm text-gray-300">Get paid in XLM</span>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => setShowAddTier(true)}
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-orbit-gold hover:bg-orbit-gold-light text-black font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-orbit-gold/20"
+                >
+                  <Plus size={20} />
+                  Create Your First Tier
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Visitor view when creator has no tiers */
+            <div className="text-center py-8">
+              <Star size={32} className="mx-auto text-gray-600 mb-3" />
+              <p className="text-gray-500">
+                This creator hasn't set up subscription tiers yet
+              </p>
+            </div>
+          )
         )}
       </div>
 

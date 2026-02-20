@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as StellarSdk from 'stellar-sdk';
-import { Zap, Loader, CreditCard, Settings, LayoutDashboard, User, Shield, Activity, Cog, UserCircle, ArrowLeft, Share2, LogOut, Home, Users, Menu, X, ChevronDown, Wallet, Sparkles } from 'lucide-react';
+import { Zap, Loader, CreditCard, Settings, LayoutDashboard, User, Shield, Activity, Cog, UserCircle, ArrowLeft, Share2, LogOut, Home, Users, Menu, X, ChevronDown, Wallet, Sparkles, BarChart3 } from 'lucide-react';
 import WalletConnect from './components/WalletConnect';
 import BalanceDisplay from './components/BalanceDisplay';
 import SubscriptionForm from './components/SubscriptionForm';
@@ -12,11 +12,17 @@ import AdminTransactions from './components/AdminTransactions';
 import SettingsPanel from './components/SettingsPanel';
 import CreatorProfile from './components/CreatorProfile';
 import SubscriberProfile from './components/SubscriberProfile';
-import Onboarding from './components/Onboarding';
+import Onboarding from './components/OnboardingSimple';
+import CreatorDashboard from './components/CreatorDashboard';
+import SubscriberDashboard from './components/SubscriberDashboard';
+import CreatorDiscovery from './components/CreatorDiscovery';
 import { useToast } from './context/ToastContext';
 import useWalletSession from './hooks/useWalletSession';
 import useUserProfile from './hooks/useUserProfile';
 import { getPlatformWallet, isAdminWallet } from './config/platform';
+import { StreamingPaymentsClient } from './services/streamingPayments';
+import PLATFORM_CONFIG from './config/platform';
+import { creatorsApi } from './services/api';
 
 // Parse hash route for public profiles
 const parseHashRoute = () => {
@@ -66,14 +72,29 @@ function App() {
   const [balance, setBalance] = useState({ xlm: 0 });
   const [transactions, setTransactions] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
+  const [creators, setCreators] = useState([]);
   const [lastTxHash, setLastTxHash] = useState(null);
   const [activeTab, setActiveTab] = useState('home'); // home, creators, profile, admin-*
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [publicProfileView, setPublicProfileView] = useState(null); // For viewing other creators
   const [showOnboarding, setShowOnboarding] = useState(false); // Will be set after wallet connects
+  const [isReturningUser, setIsReturningUser] = useState(false); // Track if user has visited before
   
   // Platform wallet from config (no user setup needed)
   const platformWallet = getPlatformWallet();
+  
+  // Initialize streaming payments client
+  const streamingClient = React.useMemo(() => {
+    const client = new StreamingPaymentsClient({
+      networkPassphrase: PLATFORM_CONFIG.NETWORK_PASSPHRASE,
+      horizonUrl: PLATFORM_CONFIG.HORIZON_URL,
+      sorobanUrl: PLATFORM_CONFIG.SOROBAN_RPC_URL,
+    });
+    if (PLATFORM_CONFIG.STREAMING_CONTRACT_ID) {
+      client.setContractId(PLATFORM_CONFIG.STREAMING_CONTRACT_ID);
+    }
+    return client;
+  }, []);
   
   // User profile management - loads automatically when wallet connects
   const {
@@ -157,6 +178,7 @@ function App() {
   useEffect(() => {
     const savedTransactions = localStorage.getItem('orbit-transactions');
     const savedSubscriptions = localStorage.getItem('orbit-subscriptions');
+    const savedProviders = localStorage.getItem('orbit-service-providers');
     
     if (savedTransactions) {
       setTransactions(JSON.parse(savedTransactions));
@@ -165,6 +187,56 @@ function App() {
     if (savedSubscriptions) {
       setSubscriptions(JSON.parse(savedSubscriptions));
     }
+    
+    // Load creators from API
+    const loadCreators = async () => {
+      try {
+        const response = await creatorsApi.list(1, 50);
+        if (response.creators) {
+          const creatorList = response.creators.map(c => ({
+            id: c.id,
+            walletAddress: c.walletAddress,
+            name: c.displayName || 'Creator',
+            bio: c.bio || '',
+            category: c.category || 'general',
+            avatar: c.avatarUrl || null,
+            verified: c.isVerified || false,
+            featured: false,
+            stats: {
+              subscribers: c.subscriberCount || 0,
+              rating: 4.5,
+            },
+            badges: c.badges || [],
+            tiers: [],
+          }));
+          setCreators(creatorList);
+          console.log('📋 Loaded', creatorList.length, 'creators from API');
+        }
+      } catch (err) {
+        console.log('API creators load failed, using localStorage fallback:', err.message);
+        // Fallback to localStorage
+        if (savedProviders) {
+          const providers = JSON.parse(savedProviders);
+          const creatorList = providers.filter(p => p.active).map(p => ({
+            walletAddress: p.walletAddress,
+            name: p.name,
+            bio: p.description || '',
+            category: p.type || 'general',
+            avatar: p.avatar || null,
+            verified: p.verified || false,
+            featured: p.featured || false,
+            stats: {
+              subscribers: p.subscriberCount || 0,
+              rating: p.rating || 4.5,
+            },
+            badges: p.badges || [],
+            tiers: p.tiers || [{ name: 'Standard', amount: p.amount }],
+          }));
+          setCreators(creatorList);
+        }
+      }
+    };
+    loadCreators();
   }, []);
 
   // Save to localStorage whenever transactions or subscriptions change
@@ -182,19 +254,34 @@ function App() {
     setWallet(walletData);
     setBalance({ xlm: walletData.balance || 0 });
     saveWalletSession(walletData);
+    
+    // Check if returning user (had session before)
+    const hadPreviousSession = localStorage.getItem('orbit-wallet-session') || localStorage.getItem('orbit-onboarding');
+    if (hadPreviousSession) {
+      setIsReturningUser(true);
+    }
+    
     toast.success('Wallet Connected', `Connected to ${walletData?.publicKey?.slice(0, 8) || 'wallet'}...`);
   }, [saveWalletSession, toast]);
 
-  // Show onboarding for new users (after wallet connects but no profile)
+  // Check for returning user on mount
   useEffect(() => {
-    if (wallet?.publicKey && !hasProfile) {
-      // User connected wallet but has no profile - show onboarding
+    const hadPreviousSession = localStorage.getItem('orbit-onboarding');
+    if (hadPreviousSession) {
+      setIsReturningUser(true);
+    }
+  }, []);
+
+  // Show onboarding for FIRST-TIME users only (after wallet connects but no profile and not returning)
+  useEffect(() => {
+    if (wallet?.publicKey && !hasProfile && !isReturningUser) {
+      // First-time user connected wallet but has no profile - show onboarding
       setShowOnboarding(true);
-    } else if (hasProfile) {
-      // User has profile - no need for onboarding
+    } else if (hasProfile || isReturningUser) {
+      // User has profile OR is returning - no need for onboarding
       setShowOnboarding(false);
     }
-  }, [wallet?.publicKey, hasProfile]);
+  }, [wallet?.publicKey, hasProfile, isReturningUser]);
 
   // Memoized balance update handler
   const handleBalanceUpdate = useCallback((newBalance) => {
@@ -291,6 +378,199 @@ function App() {
     });
   }, [toast]);
 
+  // ===== STREAMING CONTRACT HANDLERS =====
+  
+  // Sign and submit a transaction using Freighter
+  const signAndSubmitTransaction = useCallback(async (transaction) => {
+    try {
+      // Import freighter dynamically
+      const freighter = await import('@stellar/freighter-api');
+      
+      // Sign the transaction
+      const signedXdr = await freighter.signTransaction(
+        transaction.toXDR(),
+        { networkPassphrase: PLATFORM_CONFIG.NETWORK_PASSPHRASE }
+      );
+      
+      // Convert back to Transaction object
+      const signedTx = StellarSdk.TransactionBuilder.fromXDR(
+        signedXdr.signedTxXdr,
+        PLATFORM_CONFIG.NETWORK_PASSPHRASE
+      );
+      
+      // Submit using the streaming client
+      const result = await streamingClient.submitTransaction(signedTx);
+      return result;
+    } catch (error) {
+      console.error('Transaction failed:', error);
+      throw error;
+    }
+  }, [streamingClient]);
+  
+  // Creator: Withdraw all earnings from active streams
+  const handleWithdrawAll = useCallback(async () => {
+    if (!wallet?.publicKey) {
+      toast.error('No Wallet', 'Please connect your wallet first');
+      return;
+    }
+    
+    if (!PLATFORM_CONFIG.STREAMING_CONTRACT_ID) {
+      toast.error('Contract Missing', 'Streaming contract not configured');
+      return;
+    }
+    
+    try {
+      const tx = await streamingClient.buildWithdrawAllTransaction({
+        creatorPublicKey: wallet.publicKey,
+      });
+      
+      await signAndSubmitTransaction(tx);
+      toast.success('Withdrawal Complete', 'All earnings have been sent to your wallet');
+      
+      // Refresh balance
+      setTimeout(() => setLastTxHash(Date.now().toString()), 2000);
+    } catch (error) {
+      toast.error('Withdrawal Failed', error.message);
+    }
+  }, [wallet, streamingClient, signAndSubmitTransaction, toast]);
+  
+  // Creator: Terminate a subscriber's stream
+  const handleTerminateStream = useCallback(async (stream) => {
+    if (!wallet?.publicKey) {
+      toast.error('No Wallet', 'Please connect your wallet first');
+      return;
+    }
+    
+    if (!PLATFORM_CONFIG.STREAMING_CONTRACT_ID) {
+      toast.error('Contract Missing', 'Streaming contract not configured');
+      return;
+    }
+    
+    try {
+      const tx = await streamingClient.buildTerminateStreamTransaction({
+        creatorPublicKey: wallet.publicKey,
+        streamId: stream.id,
+      });
+      
+      await signAndSubmitTransaction(tx);
+      toast.success('Stream Terminated', 'Subscriber has been refunded remaining balance');
+      
+      // Update local state
+      setSubscriptions(prev => prev.filter(s => s.id !== stream.id));
+    } catch (error) {
+      toast.error('Termination Failed', error.message);
+    }
+  }, [wallet, streamingClient, signAndSubmitTransaction, toast]);
+  
+  // Subscriber: Extend a subscription
+  const handleExtendSubscription = useCallback(async (subscriptionId, additionalAmount, additionalDays) => {
+    if (!wallet?.publicKey) {
+      toast.error('No Wallet', 'Please connect your wallet first');
+      return;
+    }
+    
+    if (!PLATFORM_CONFIG.STREAMING_CONTRACT_ID) {
+      toast.error('Contract Missing', 'Streaming contract not configured');
+      return;
+    }
+    
+    try {
+      const additionalDuration = additionalDays * 86400; // Convert days to seconds
+      
+      const tx = await streamingClient.buildExtendStreamTransaction({
+        subscriberPublicKey: wallet.publicKey,
+        streamId: subscriptionId,
+        additionalAmount,
+        additionalDuration,
+      });
+      
+      await signAndSubmitTransaction(tx);
+      toast.success('Subscription Extended', `Added ${additionalDays} days to your subscription`);
+      
+      // Refresh balance
+      setTimeout(() => setLastTxHash(Date.now().toString()), 2000);
+    } catch (error) {
+      toast.error('Extension Failed', error.message);
+    }
+  }, [wallet, streamingClient, signAndSubmitTransaction, toast]);
+  
+  // Subscriber: Toggle auto-renewal
+  const handleToggleAutoRenew = useCallback(async (subscriptionId, enabled) => {
+    if (!wallet?.publicKey) {
+      toast.error('No Wallet', 'Please connect your wallet first');
+      return;
+    }
+    
+    if (!PLATFORM_CONFIG.STREAMING_CONTRACT_ID) {
+      toast.error('Contract Missing', 'Streaming contract not configured');
+      return;
+    }
+    
+    try {
+      const tx = await streamingClient.buildToggleAutoRenewTransaction({
+        subscriberPublicKey: wallet.publicKey,
+        streamId: subscriptionId,
+      });
+      
+      await signAndSubmitTransaction(tx);
+      
+      // Update local state
+      setSubscriptions(prev => prev.map(sub => 
+        sub.id === subscriptionId 
+          ? { ...sub, autoRenew: enabled }
+          : sub
+      ));
+      
+      toast.success(
+        enabled ? 'Auto-Renew Enabled' : 'Auto-Renew Disabled',
+        enabled ? 'Your subscription will renew automatically' : 'Your subscription will end when complete'
+      );
+    } catch (error) {
+      toast.error('Toggle Failed', error.message);
+    }
+  }, [wallet, streamingClient, signAndSubmitTransaction, toast]);
+  
+  // Refresh streams from contract
+  const handleRefreshStreams = useCallback(async () => {
+    if (!wallet?.publicKey || !PLATFORM_CONFIG.STREAMING_CONTRACT_ID) {
+      return;
+    }
+    
+    try {
+      // Get stream IDs for this user
+      const streamIds = isCreator 
+        ? await streamingClient.getCreatorStreams(wallet.publicKey)
+        : await streamingClient.getSubscriberStreams(wallet.publicKey);
+      
+      // Fetch details for each stream
+      const streams = await Promise.all(
+        streamIds.map(id => streamingClient.getStream(id))
+      );
+      
+      // Transform to subscription format
+      const transformedStreams = streams.map(stream => ({
+        id: stream.id,
+        service: stream.creator,
+        creatorName: `Creator ${stream.creator.slice(0, 6)}`,
+        subscriber: stream.subscriber,
+        amount: stream.totalAmount / 10_000_000,
+        total: stream.totalAmount / 10_000_000,
+        startTime: stream.startTime,
+        endTime: stream.endTime,
+        status: stream.status.toLowerCase(),
+        autoRenew: stream.autoRenew,
+        withdrawn: stream.withdrawn / 10_000_000,
+        streamed: ((Date.now() / 1000 - stream.startTime) / (stream.endTime - stream.startTime)) * (stream.totalAmount / 10_000_000),
+        tierName: `Tier ${stream.tierId}`,
+        tierId: stream.tierId,
+      }));
+      
+      setSubscriptions(transformedStreams);
+    } catch (error) {
+      console.error('Failed to refresh streams:', error);
+    }
+  }, [wallet, isCreator, streamingClient]);
+
   // ✅ FIXED: Completely rewritten payment handler with proper state updates
   const handlePaymentProcessed = useCallback((transaction) => {
     console.log('🔄 Payment processed, updating UI...');
@@ -376,6 +656,8 @@ function App() {
         onCreateProfile={createProfile}
         onComplete={(data) => {
           setShowOnboarding(false);
+          setIsReturningUser(true); // Mark as returning user
+          localStorage.setItem('orbit-onboarding', 'completed'); // Persist for future visits
           // If creator with wallet connected, go to profile tab
           if (data.role === 'creator' && wallet?.publicKey) {
             setActiveTab('profile');
@@ -405,48 +687,51 @@ function App() {
             >
               <div className="relative">
                 <div className="absolute inset-0 bg-orbit-gold/40 blur-xl rounded-full group-hover:bg-orbit-gold/50 transition-all" />
-                <div className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-orbit-gold/20 to-orbit-gold/5 border border-orbit-gold/30 flex items-center justify-center">
-                  <Zap size={24} className="text-orbit-gold" />
+                <div className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-orbit-gold/20 to-orbit-gold/5 border border-orbit-gold/30 flex items-center justify-center overflow-hidden">
+                  <img src="/orbit-logo.png" alt="Orbit" className="w-8 h-8 sm:w-10 sm:h-10 object-contain" />
                 </div>
               </div>
               <div className="hidden sm:block">
                 <h1 className="text-2xl font-display font-black tracking-wider text-gradient-gold">ORBIT</h1>
-                <p className="text-[10px] text-orbit-gray uppercase tracking-widest">Creator Subscriptions</p>
+                <p className="text-[10px] text-orbit-gray uppercase tracking-widest">Crypto Payments</p>
               </div>
             </button>
             
             {/* Desktop Navigation */}
-            {wallet?.publicKey && (
-              <nav className="hidden md:flex items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                <NavButton 
-                  active={activeTab === 'home'} 
-                  onClick={() => setActiveTab('home')}
-                  icon={<Home size={18} />}
-                  label="Home"
-                />
-                <NavButton 
-                  active={activeTab === 'creators'} 
-                  onClick={() => setActiveTab('creators')}
-                  icon={<Users size={18} />}
-                  label="Creators"
-                />
-                <NavButton 
-                  active={activeTab === 'profile'} 
-                  onClick={() => setActiveTab('profile')}
-                  icon={<UserCircle size={18} />}
-                  label="My Profile"
-                />
-                {isAdmin && (
+            {/* Desktop Navigation - Always visible */}
+            <nav className="hidden md:flex items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+              <NavButton 
+                active={activeTab === 'home'} 
+                onClick={() => setActiveTab('home')}
+                icon={<Home size={18} />}
+                label="Home"
+              />
+              <NavButton 
+                active={activeTab === 'creators'} 
+                onClick={() => setActiveTab('creators')}
+                icon={<Users size={18} />}
+                label="Creators"
+              />
+              {wallet?.publicKey && (
+                <>
                   <NavButton 
-                    active={activeTab.startsWith('admin')} 
-                    onClick={() => setActiveTab('admin-dashboard')}
-                    icon={<Shield size={18} />}
-                    label="Admin"
-                    variant="admin"
+                    active={activeTab === 'profile'} 
+                    onClick={() => setActiveTab('profile')}
+                    icon={<UserCircle size={18} />}
+                    label="My Profile"
                   />
-                )}
-              </nav>
-            )}
+                  {isAdmin && (
+                    <NavButton 
+                      active={activeTab.startsWith('admin')} 
+                      onClick={() => setActiveTab('admin-dashboard')}
+                      icon={<Shield size={18} />}
+                      label="Admin"
+                      variant="admin"
+                    />
+                  )}
+                </>
+              )}
+            </nav>
             
             {/* Right Side - Wallet Info */}
             <div className="flex items-center gap-3">
@@ -480,48 +765,66 @@ function App() {
                   </div>
                 </>
               ) : (
-                <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-full">
-                  Testnet
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-full">
+                    Testnet
+                  </span>
+                  <button
+                    onClick={() => document.getElementById('wallet-connect-btn')?.click()}
+                    className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg bg-orbit-gold/10 border border-orbit-gold/30 text-orbit-gold text-sm font-medium hover:bg-orbit-gold/20 transition-all"
+                  >
+                    <Wallet size={16} />
+                    Connect
+                  </button>
+                </div>
               )}
             </div>
           </div>
         </div>
       </header>
 
-      {/* Mobile Bottom Navigation */}
-      {wallet?.publicKey && (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0A0A0C]/95 backdrop-blur-xl border-t border-white/[0.06] px-2 py-2 safe-area-pb">
-          <div className="flex items-center justify-around">
-            <MobileNavButton 
-              active={activeTab === 'home'} 
-              onClick={() => setActiveTab('home')}
-              icon={<Home size={22} />}
-              label="Home"
-            />
-            <MobileNavButton 
-              active={activeTab === 'creators'} 
-              onClick={() => setActiveTab('creators')}
-              icon={<Users size={22} />}
-              label="Creators"
-            />
-            <MobileNavButton 
-              active={activeTab === 'profile'} 
-              onClick={() => setActiveTab('profile')}
-              icon={<UserCircle size={22} />}
-              label="Profile"
-            />
-            {isAdmin && (
+      {/* Mobile Bottom Navigation - Always visible */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0A0A0C]/95 backdrop-blur-xl border-t border-white/[0.06] px-2 py-2 safe-area-pb">
+        <div className="flex items-center justify-around">
+          <MobileNavButton 
+            active={activeTab === 'home'} 
+            onClick={() => setActiveTab('home')}
+            icon={<Home size={22} />}
+            label="Home"
+          />
+          <MobileNavButton 
+            active={activeTab === 'creators'} 
+            onClick={() => setActiveTab('creators')}
+            icon={<Users size={22} />}
+            label="Creators"
+          />
+          {wallet?.publicKey ? (
+            <>
               <MobileNavButton 
-                active={activeTab.startsWith('admin')} 
-                onClick={() => setActiveTab('admin-dashboard')}
-                icon={<Shield size={22} />}
-                label="Admin"
+                active={activeTab === 'profile'} 
+                onClick={() => setActiveTab('profile')}
+                icon={<UserCircle size={22} />}
+                label="Profile"
               />
-            )}
-          </div>
-        </nav>
-      )}
+              {isAdmin && (
+                <MobileNavButton 
+                  active={activeTab.startsWith('admin')} 
+                  onClick={() => setActiveTab('admin-dashboard')}
+                  icon={<Shield size={22} />}
+                  label="Admin"
+                />
+              )}
+            </>
+          ) : (
+            <MobileNavButton 
+              active={false} 
+              onClick={() => document.getElementById('wallet-connect-btn')?.click()}
+              icon={<Wallet size={22} />}
+              label="Connect"
+            />
+          )}
+        </div>
+      </nav>
 
       <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10">
         {/* Public Profile View (accessible without login) */}
@@ -557,51 +860,87 @@ function App() {
               </div>
             )}
           </div>
-        ) : !wallet ? (
-          /* Not logged in - Landing Page */
+        ) : activeTab === 'creators' ? (
+          /* Browse Creators - accessible without wallet */
+          <div className="animate-fade-in">
+            <CreatorDiscovery
+              creators={creators}
+              wallet={wallet}
+              onViewCreator={(creator) => {
+                // Navigate to creator's public profile
+                setPublicProfileView(creator);
+                setActiveTab('public-profile');
+                window.location.hash = `#/creator/${creator.walletAddress}`;
+              }}
+              onSubscribe={handleSubscribe}
+              onWalletConnect={handleWalletConnect}
+            />
+          </div>
+        ) : activeTab === 'profile' && !wallet ? (
+          /* Profile tab but no wallet - prompt connect */
+          <div className="animate-fade-in">
+            <div className="max-w-md mx-auto text-center py-16">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-white/5 flex items-center justify-center">
+                <UserCircle size={40} className="text-orbit-gray" />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-3">Connect to View Profile</h2>
+              <p className="text-orbit-gray mb-8">Connect your wallet to access your profile and manage subscriptions</p>
+              <WalletConnect onConnect={handleWalletConnect} />
+            </div>
+          </div>
+        ) : !wallet && activeTab === 'home' ? (
+          /* Not logged in + Home tab - Landing Page */
           <div className="animate-fade-in">
             <div className="max-w-4xl mx-auto text-center py-10 lg:py-20">
               {/* Hero Section */}
               <div className="mb-12">
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-orbit-gold/10 border border-orbit-gold/20 mb-6">
                   <Sparkles size={16} className="text-orbit-gold" />
-                  <span className="text-sm text-orbit-gold font-medium">Built on Stellar Blockchain</span>
+                  <span className="text-sm text-orbit-gold font-medium">Crypto Payments for Creators</span>
                 </div>
                 <h2 className="text-4xl sm:text-5xl lg:text-6xl font-display font-black tracking-wide text-white mb-6">
-                  Support Creators with <span className="text-gradient-gold">Crypto</span>
+                  Get Paid for Your <span className="text-gradient-gold">Content</span>
                 </h2>
                 <p className="text-orbit-gray text-lg sm:text-xl max-w-2xl mx-auto mb-8">
-                  Subscribe to your favorite content creators using XLM. Fast, low fees, and you stay in control.
+                  Accept streaming payments for your YouTube, Discord, Telegram, podcasts & more. Low fees, instant settlement.
                 </p>
               </div>
               
-              {/* Connect Wallet CTA */}
-              <div className="mb-16">
+              {/* CTA Buttons */}
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
                 <WalletConnect onConnect={handleWalletConnect} />
+                <span className="text-orbit-gray hidden sm:block">or</span>
+                <button
+                  onClick={() => setActiveTab('creators')}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-all"
+                >
+                  <Users size={20} />
+                  Explore Creators
+                </button>
               </div>
               
               {/* Features Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
                 <div className="card-glass p-6 text-center">
-                  <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                    <Zap size={24} className="text-emerald-400" />
+                  <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                    <Zap size={24} className="text-purple-400" />
                   </div>
-                  <h3 className="text-white font-bold mb-2">Instant Payments</h3>
-                  <p className="text-sm text-orbit-gray">3-5 second settlement on Stellar</p>
+                  <h3 className="text-white font-bold mb-2">Streaming Payments</h3>
+                  <p className="text-sm text-orbit-gray">XLM flows to you in real-time</p>
                 </div>
                 <div className="card-glass p-6 text-center">
                   <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                    <Wallet size={24} className="text-blue-400" />
+                    <Users size={24} className="text-blue-400" />
                   </div>
-                  <h3 className="text-white font-bold mb-2">Non-Custodial</h3>
-                  <p className="text-sm text-orbit-gray">Your keys, your crypto, always</p>
+                  <h3 className="text-white font-bold mb-2">Any Platform</h3>
+                  <p className="text-sm text-orbit-gray">YouTube, Discord, Telegram & more</p>
                 </div>
                 <div className="card-glass p-6 text-center">
                   <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-orbit-gold/10 flex items-center justify-center">
                     <CreditCard size={24} className="text-orbit-gold" />
                   </div>
                   <h3 className="text-white font-bold mb-2">Low 2% Fee</h3>
-                  <p className="text-sm text-orbit-gray">Way less than Patreon's 5-12%</p>
+                  <p className="text-sm text-orbit-gray">Keep more of what you earn</p>
                 </div>
               </div>
             </div>
@@ -638,44 +977,74 @@ function App() {
           /* User Profile Tab - Show different view based on role */
           <div className="animate-fade-in">
             {isCreator ? (
-              <CreatorProfile 
-                wallet={wallet}
-                isOwnProfile={true}
-                userProfile={userProfile}
-                onUpdateProfile={updateProfile}
-                onSubscribe={handleSubscribe}
-                onPayment={handlePaymentProcessed}
-                platformWallet={platformWallet}
-                onWalletConnect={handleWalletConnect}
-              />
+              <div className="space-y-8">
+                {/* Creator Dashboard - Earnings & Subscribers */}
+                <CreatorDashboard
+                  wallet={wallet}
+                  streams={subscriptions}
+                  onWithdrawAll={handleWithdrawAll}
+                  onTerminateStream={handleTerminateStream}
+                  onRefresh={handleRefreshStreams}
+                />
+                
+                {/* Creator Profile Editor */}
+                <CreatorProfile 
+                  wallet={wallet}
+                  isOwnProfile={true}
+                  userProfile={userProfile}
+                  onUpdateProfile={updateProfile}
+                  onSubscribe={handleSubscribe}
+                  onPayment={handlePaymentProcessed}
+                  platformWallet={platformWallet}
+                  onWalletConnect={handleWalletConnect}
+                />
+              </div>
             ) : (
-              <SubscriberProfile
-                wallet={wallet}
-                userProfile={userProfile}
-                onUpdateProfile={updateProfile}
-                subscriptions={subscriptions}
-                transactions={transactions}
-              />
+              <div className="space-y-8">
+                {/* Subscriber Dashboard - Active Subscriptions */}
+                <SubscriberDashboard
+                  wallet={wallet}
+                  subscriptions={subscriptions.map(sub => ({
+                    ...sub,
+                    // Transform to expected format
+                    startTime: sub.startTime || Math.floor(Date.now() / 1000) - 86400 * 15,
+                    endTime: sub.endTime || Math.floor(Date.now() / 1000) + 86400 * 15,
+                    total: sub.amount || 100,
+                    status: sub.status || 'active',
+                    autoRenew: sub.autoRenew || false,
+                    creatorName: sub.service || sub.creatorName || 'Creator',
+                    tierName: sub.tierName || 'Standard',
+                  }))}
+                  onCancel={handleCancelSubscription}
+                  onExtend={handleExtendSubscription}
+                  onToggleAutoRenew={handleToggleAutoRenew}
+                  onRefresh={handleRefreshStreams}
+                />
+                
+                {/* Subscriber Profile */}
+                <SubscriberProfile
+                  wallet={wallet}
+                  userProfile={userProfile}
+                  onUpdateProfile={updateProfile}
+                  subscriptions={subscriptions}
+                  transactions={transactions}
+                  hasTiers={isCreator}
+                  onBecomeCreator={() => {
+                    // Switch to creator mode by creating a profile with creator role
+                    if (userProfile) {
+                      updateProfile({ ...userProfile, role: 'creator' });
+                    } else {
+                      createProfile('creator', {});
+                    }
+                    setActiveTab('profile');
+                  }}
+                />
+              </div>
             )}
           </div>
           
-        ) : activeTab === 'creators' ? (
-          /* Browse Creators */
-          <div className="animate-fade-in">
-            <div className="mb-8">
-              <h2 className="text-2xl font-display font-bold text-white mb-2">Browse Creators</h2>
-              <p className="text-orbit-gray">Discover and subscribe to content creators</p>
-            </div>
-            <SubscriptionForm 
-              wallet={wallet}
-              platformWallet={platformWallet}
-              onSubscribe={handleSubscribe}
-              onPayment={handlePaymentProcessed}
-            />
-          </div>
-          
         ) : (
-          /* Home Tab (default) */
+          /* Home Tab (default - requires wallet) */
           <div className="animate-fade-in">
             {/* Welcome Section */}
             <div className="mb-8">
@@ -740,7 +1109,7 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-2">
-              <Zap size={20} className="text-orbit-gold" />
+              <img src="/orbit-logo.png" alt="Orbit" className="w-5 h-5 object-contain" />
               <span className="font-display font-bold text-white">ORBIT</span>
               <span className="text-orbit-gray text-sm">• Stellar Testnet</span>
             </div>

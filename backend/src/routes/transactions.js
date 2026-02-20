@@ -162,6 +162,15 @@ export default async function transactionRoutes(fastify, options) {
         [data.creatorId, data.amountXlm - platformFee]
       );
       
+      // Track platform earnings
+      if (platformFee > 0) {
+        await client.query(
+          `INSERT INTO platform_earnings (transaction_id, amount_xlm, fee_type, status)
+           VALUES ($1, $2, 'tip_fee', 'collected')`,
+          [txResult.rows[0].id, platformFee]
+        );
+      }
+      
       // Create notification for creator
       const senderResult = await client.query(
         'SELECT display_name FROM users WHERE id = $1',

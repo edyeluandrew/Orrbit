@@ -3,8 +3,9 @@ import { z } from 'zod';
 const updateUserSchema = z.object({
   displayName: z.string().max(100).optional(),
   bio: z.string().max(500).optional(),
-  avatarUrl: z.string().url().optional(),
+  avatarUrl: z.string().url().optional().nullable(),
   email: z.string().email().optional(),
+  role: z.enum(['subscriber', 'creator']).optional(),
 });
 
 export default async function userRoutes(fastify, options) {
@@ -44,7 +45,40 @@ export default async function userRoutes(fastify, options) {
   }, async (request, reply) => {
     const data = updateUserSchema.parse(request.body);
     
-    const user = await db.users.update(request.user.id, data);
+    // Get current user to check role change
+    const currentUser = await db.users.findById(request.user.id);
+    
+    // If becoming a creator, also create creator record
+    if (data.role === 'creator' && currentUser.role !== 'creator') {
+      await db.transaction(async (client) => {
+        // Update user role
+        await client.query(
+          `UPDATE users SET role = 'creator', display_name = COALESCE($2, display_name), 
+           bio = COALESCE($3, bio), avatar_url = COALESCE($4, avatar_url), updated_at = NOW()
+           WHERE id = $1`,
+          [request.user.id, data.displayName, data.bio, data.avatarUrl]
+        );
+        
+        // Create creator record if not exists
+        const existingCreator = await client.query(
+          'SELECT id FROM creators WHERE user_id = $1',
+          [request.user.id]
+        );
+        
+        if (existingCreator.rows.length === 0) {
+          await client.query(
+            `INSERT INTO creators (user_id, category, created_at) VALUES ($1, 'general', NOW())`,
+            [request.user.id]
+          );
+          console.log('Created creator record for user:', request.user.id);
+        }
+      });
+    } else {
+      // Just update user data
+      await db.users.update(request.user.id, data);
+    }
+    
+    const user = await db.users.findById(request.user.id);
     
     return {
       id: user.id,

@@ -26,15 +26,120 @@ const querySchema = z.object({
 export default async function adminRoutes(fastify, options) {
   const { db } = fastify;
   
-  // Admin-only auth decorator
+  // Admin-only auth decorator - checks wallet address against admin_wallets table
   fastify.decorate('adminOnly', async function (request, reply) {
     try {
       await request.jwtVerify();
-      if (request.user.role !== 'admin') {
-        return reply.code(403).send({ error: 'Forbidden', message: 'Admin access required' });
+      const walletAddress = request.user.walletAddress;
+      
+      // Check if wallet is in admin_wallets table
+      const result = await db.query(
+        `SELECT id, permissions FROM admin_wallets WHERE wallet_address = $1 AND is_active = true`,
+        [walletAddress]
+      );
+      
+      if (result.rows.length === 0) {
+        // Fallback: check if user role is admin (for backwards compatibility)
+        if (request.user.role !== 'admin') {
+          return reply.code(403).send({ error: 'Forbidden', message: 'Admin access required' });
+        }
       }
+      
+      // Attach admin info to request
+      request.adminContext = result.rows[0] || { permissions: ['all'] };
+      
     } catch (err) {
       return reply.code(401).send({ error: 'Unauthorized', message: 'Invalid or expired token' });
+    }
+  });
+
+  // ============================================
+  // ADMIN WALLET MANAGEMENT
+  // ============================================
+
+  /**
+   * GET /api/admin/wallets
+   * List all admin wallets
+   */
+  fastify.get('/wallets', {
+    preHandler: [fastify.adminOnly],
+  }, async (request, reply) => {
+    const result = await db.query(
+      `SELECT id, wallet_address, label, is_active, permissions, added_by, created_at
+       FROM admin_wallets ORDER BY created_at DESC`
+    );
+    return { wallets: result.rows };
+  });
+
+  /**
+   * POST /api/admin/wallets
+   * Add new admin wallet
+   */
+  fastify.post('/wallets', {
+    preHandler: [fastify.adminOnly],
+  }, async (request, reply) => {
+    const { wallet_address, label, permissions = ['all'] } = request.body;
+    
+    if (!wallet_address || wallet_address.length !== 56) {
+      return reply.code(400).send({ error: 'Invalid wallet address' });
+    }
+    
+    try {
+      const result = await db.query(
+        `INSERT INTO admin_wallets (wallet_address, label, permissions, added_by)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [wallet_address, label, JSON.stringify(permissions), request.user.walletAddress]
+      );
+      return { wallet: result.rows[0], message: 'Admin wallet added successfully' };
+    } catch (err) {
+      if (err.code === '23505') {
+        return reply.code(409).send({ error: 'Wallet already registered as admin' });
+      }
+      throw err;
+    }
+  });
+
+  /**
+   * DELETE /api/admin/wallets/:id
+   * Remove admin wallet
+   */
+  fastify.delete('/wallets/:id', {
+    preHandler: [fastify.adminOnly],
+  }, async (request, reply) => {
+    const { id } = request.params;
+    
+    // Prevent removing self
+    const wallet = await db.query(`SELECT wallet_address FROM admin_wallets WHERE id = $1`, [id]);
+    if (wallet.rows.length > 0 && wallet.rows[0].wallet_address === request.user.walletAddress) {
+      return reply.code(400).send({ error: 'Cannot remove your own admin access' });
+    }
+    
+    await db.query(`DELETE FROM admin_wallets WHERE id = $1`, [id]);
+    return { message: 'Admin wallet removed' };
+  });
+
+  /**
+   * POST /api/admin/check
+   * Check if current wallet is admin
+   */
+  fastify.post('/check', async (request, reply) => {
+    try {
+      await request.jwtVerify();
+      const walletAddress = request.user.walletAddress;
+      
+      const result = await db.query(
+        `SELECT id, permissions FROM admin_wallets WHERE wallet_address = $1 AND is_active = true`,
+        [walletAddress]
+      );
+      
+      const isAdmin = result.rows.length > 0 || request.user.role === 'admin';
+      
+      return { 
+        isAdmin,
+        permissions: result.rows[0]?.permissions || (request.user.role === 'admin' ? ['all'] : [])
+      };
+    } catch (err) {
+      return { isAdmin: false, permissions: [] };
     }
   });
 
@@ -129,7 +234,8 @@ export default async function adminRoutes(fastify, options) {
   }, async (request, reply) => {
     const { period = '30d' } = request.query;
     
-    const interval = period === '7d' ? '7 days' : period === '90d' ? '90 days' : '30 days';
+    // Use parameterized interval to prevent SQL injection
+    const intervalDays = period === '7d' ? 7 : period === '90d' ? 90 : 30;
     const groupBy = period === '7d' ? 'day' : period === '90d' ? 'week' : 'day';
     
     const [userGrowth, transactionVolume] = await Promise.all([
@@ -138,10 +244,10 @@ export default async function adminRoutes(fastify, options) {
           DATE_TRUNC($1, created_at) as date,
           COUNT(*) as count
         FROM users
-        WHERE created_at > NOW() - INTERVAL '${interval}'
+        WHERE created_at > NOW() - ($2 || ' days')::INTERVAL
         GROUP BY DATE_TRUNC($1, created_at)
         ORDER BY date
-      `, [groupBy]),
+      `, [groupBy, intervalDays]),
       
       db.query(`
         SELECT 
@@ -149,10 +255,10 @@ export default async function adminRoutes(fastify, options) {
           SUM(amount_xlm) as volume,
           COUNT(*) as count
         FROM transactions
-        WHERE status = 'completed' AND created_at > NOW() - INTERVAL '${interval}'
+        WHERE status = 'completed' AND created_at > NOW() - ($2 || ' days')::INTERVAL
         GROUP BY DATE_TRUNC($1, created_at)
         ORDER BY date
-      `, [groupBy]),
+      `, [groupBy, intervalDays]),
     ]);
 
     return {
@@ -629,18 +735,166 @@ export default async function adminRoutes(fastify, options) {
 
   /**
    * GET /api/admin/settings
-   * Get platform settings
+   * Get platform settings from database
    */
   fastify.get('/settings', {
     preHandler: [fastify.adminOnly],
   }, async (request, reply) => {
-    // Could be stored in DB, for now return from env
+    // Get settings from database
+    const result = await db.query(`SELECT key, value FROM platform_settings`);
+    
+    // Convert to object
+    const settings = {};
+    result.rows.forEach(row => {
+      settings[row.key] = row.value;
+    });
+    
+    // Return with defaults for any missing values
     return {
-      platformFeePercent: parseFloat(process.env.PLATFORM_FEE_PERCENT) || 2,
-      minSubscriptionXlm: parseFloat(process.env.MIN_SUBSCRIPTION_XLM) || 1,
-      maxSubscriptionXlm: parseFloat(process.env.MAX_SUBSCRIPTION_XLM) || 10000,
-      stellarNetwork: process.env.STELLAR_NETWORK || 'TESTNET',
-      maintenanceMode: process.env.MAINTENANCE_MODE === 'true',
+      platform_fee_percent: parseFloat(settings.platform_fee_percent) || 2,
+      min_subscription_xlm: parseFloat(settings.min_subscription_xlm) || 1,
+      max_subscription_xlm: parseFloat(settings.max_subscription_xlm) || 10000,
+      platform_wallet: settings.platform_wallet || '',
+      stellar_network: settings.stellar_network || 'testnet',
+      maintenance_mode: settings.maintenance_mode === 'true',
+      allow_new_registrations: settings.allow_new_registrations !== 'false',
+    };
+  });
+
+  /**
+   * PUT /api/admin/settings
+   * Update platform settings
+   */
+  fastify.put('/settings', {
+    preHandler: [fastify.adminOnly],
+  }, async (request, reply) => {
+    const updates = request.body;
+    const allowedKeys = [
+      'platform_fee_percent',
+      'min_subscription_xlm', 
+      'max_subscription_xlm',
+      'platform_wallet',
+      'stellar_network',
+      'maintenance_mode',
+      'allow_new_registrations'
+    ];
+    
+    const results = [];
+    
+    for (const [key, value] of Object.entries(updates)) {
+      if (!allowedKeys.includes(key)) continue;
+      
+      await db.query(
+        `INSERT INTO platform_settings (key, value, updated_by, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (key) 
+         DO UPDATE SET value = $2, updated_by = $3, updated_at = NOW()`,
+        [key, String(value), request.user.walletAddress]
+      );
+      results.push(key);
+    }
+    
+    return { message: 'Settings updated', updated: results };
+  });
+
+  /**
+   * GET /api/admin/settings/public
+   * Get public platform settings (no auth required)
+   */
+  fastify.get('/settings/public', async (request, reply) => {
+    const result = await db.query(
+      `SELECT key, value FROM platform_settings 
+       WHERE key IN ('platform_fee_percent', 'platform_wallet', 'stellar_network', 'maintenance_mode')`
+    );
+    
+    const settings = {};
+    result.rows.forEach(row => {
+      settings[row.key] = row.value;
+    });
+    
+    return {
+      platform_fee_percent: parseFloat(settings.platform_fee_percent) || 2,
+      platform_wallet: settings.platform_wallet || '',
+      stellar_network: settings.stellar_network || 'testnet',
+      maintenance_mode: settings.maintenance_mode === 'true',
+    };
+  });
+
+  // ============================================
+  // PLATFORM EARNINGS & WITHDRAWAL
+  // ============================================
+
+  /**
+   * GET /api/admin/earnings
+   * Get platform earnings summary
+   */
+  fastify.get('/earnings', {
+    preHandler: [fastify.adminOnly],
+  }, async (request, reply) => {
+    const [summary, recent] = await Promise.all([
+      db.query(`
+        SELECT 
+          COALESCE(SUM(amount_xlm), 0) as total_earned,
+          COALESCE(SUM(amount_xlm) FILTER (WHERE status = 'collected'), 0) as available,
+          COALESCE(SUM(amount_xlm) FILTER (WHERE status = 'withdrawn'), 0) as withdrawn
+        FROM platform_earnings
+      `),
+      db.query(`
+        SELECT pe.*, t.type as transaction_type, t.tx_hash as source_tx_hash
+        FROM platform_earnings pe
+        LEFT JOIN transactions t ON pe.transaction_id = t.id
+        ORDER BY pe.created_at DESC
+        LIMIT 50
+      `)
+    ]);
+    
+    return {
+      summary: summary.rows[0],
+      recent: recent.rows
+    };
+  });
+
+  /**
+   * POST /api/admin/withdraw
+   * Request withdrawal of platform earnings
+   */
+  fastify.post('/withdraw', {
+    preHandler: [fastify.adminOnly],
+  }, async (request, reply) => {
+    const { amount_xlm, destination_wallet } = request.body;
+    
+    if (!amount_xlm || amount_xlm <= 0) {
+      return reply.code(400).send({ error: 'Invalid amount' });
+    }
+    
+    if (!destination_wallet || destination_wallet.length !== 56) {
+      return reply.code(400).send({ error: 'Invalid destination wallet' });
+    }
+    
+    // Check available balance
+    const available = await db.query(
+      `SELECT COALESCE(SUM(amount_xlm), 0) as available FROM platform_earnings WHERE status = 'collected'`
+    );
+    
+    if (parseFloat(available.rows[0].available) < amount_xlm) {
+      return reply.code(400).send({ error: 'Insufficient platform balance' });
+    }
+    
+    // TODO: Execute actual Stellar withdrawal transaction here
+    // For now, mark earnings as withdrawn (would need Stellar SDK integration)
+    
+    // Record withdrawal request
+    const result = await db.query(
+      `INSERT INTO transactions (sender_id, type, amount_xlm, status, memo)
+       VALUES (NULL, 'payout', $1, 'pending', $2)
+       RETURNING *`,
+      [amount_xlm, `Platform withdrawal to ${destination_wallet}`]
+    );
+    
+    return {
+      message: 'Withdrawal request created',
+      transaction: result.rows[0],
+      note: 'Manual withdrawal required - execute Stellar transaction and update status'
     };
   });
 

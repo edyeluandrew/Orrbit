@@ -45,14 +45,15 @@ async function sendRenewalReminders() {
        JOIN users cu ON c.user_id = cu.id
        LEFT JOIN tiers t ON s.tier_id = t.id
        WHERE s.status = 'active'
-         AND s.next_billing_at::date = (CURRENT_DATE + INTERVAL '${days} days')::date
+         AND s.next_billing_at::date = (CURRENT_DATE + ($1 || ' days')::INTERVAL)::date
          AND NOT EXISTS (
            SELECT 1 FROM notifications n 
            WHERE n.user_id = s.subscriber_id 
              AND n.type = 'renewal_reminder'
              AND n.data->>'subscription_id' = s.id::text
-             AND n.data->>'days_until' = '${days}'
-         )`
+             AND n.data->>'days_until' = $2
+         )`,
+      [days, String(days)]
     );
     
     console.log(`  Found ${result.rows.length} subscriptions expiring in ${days} day(s)`);

@@ -1,5 +1,3 @@
-import { verify } from '@fastify/jwt';
-
 // Store active WebSocket connections by user ID
 const connections = new Map();
 

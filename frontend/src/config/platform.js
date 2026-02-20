@@ -22,6 +22,14 @@ export const PLATFORM_CONFIG = {
   // Platform fee percentage
   PLATFORM_FEE_PERCENT: parseInt(import.meta.env.VITE_PLATFORM_FEE_PERCENT || '2', 10),
   
+  // Streaming payments contract ID (Soroban)
+  STREAMING_CONTRACT_ID: import.meta.env.VITE_STREAMING_CONTRACT_ID || '',
+  
+  // Soroban RPC URL  
+  SOROBAN_RPC_URL: import.meta.env.VITE_NETWORK === 'mainnet'
+    ? 'https://soroban-rpc.mainnet.stellar.gateway.fm'
+    : 'https://soroban-testnet.stellar.org',
+  
   // Network configuration
   NETWORK: import.meta.env.VITE_NETWORK || 'testnet',
   HORIZON_URL: import.meta.env.VITE_NETWORK === 'mainnet' 

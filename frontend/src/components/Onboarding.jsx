@@ -15,7 +15,10 @@ import {
   Globe,
   Shield,
   Coins,
-  Users
+  Users,
+  MessageCircle,
+  Mic,
+  Send
 } from 'lucide-react';
 
 const Onboarding = ({ onComplete, onConnectWallet, onCreateProfile, wallet }) => {
@@ -35,10 +38,11 @@ const Onboarding = ({ onComplete, onConnectWallet, onCreateProfile, wallet }) =>
   ];
 
   const categories = [
-    { id: 'youtube', label: 'YouTube / Video', icon: Youtube },
-    { id: 'music', label: 'Music / Audio', icon: Music },
-    { id: 'art', label: 'Art / Design', icon: Palette },
-    { id: 'writing', label: 'Writing / Blog', icon: BookOpen },
+    { id: 'youtube', label: 'YouTube', icon: Youtube },
+    { id: 'discord', label: 'Discord', icon: MessageCircle },
+    { id: 'telegram', label: 'Telegram', icon: Send },
+    { id: 'podcast', label: 'Podcast', icon: Mic },
+    { id: 'music', label: 'Music', icon: Music },
     { id: 'other', label: 'Other', icon: Globe },
   ];
 
@@ -103,8 +107,8 @@ const Onboarding = ({ onComplete, onConnectWallet, onCreateProfile, wallet }) =>
       {/* Hero Logo */}
       <div className="relative inline-block">
         <div className="absolute inset-0 bg-orbit-gold/30 blur-3xl rounded-full" />
-        <div className="relative w-24 h-24 mx-auto rounded-3xl bg-gradient-to-br from-orbit-gold/30 to-orbit-gold/10 border border-orbit-gold/40 flex items-center justify-center">
-          <Zap size={48} className="text-orbit-gold" />
+        <div className="relative w-24 h-24 mx-auto rounded-3xl bg-gradient-to-br from-orbit-gold/30 to-orbit-gold/10 border border-orbit-gold/40 flex items-center justify-center overflow-hidden">
+          <img src="/orbit-logo.png" alt="Orbit" className="w-16 h-16 object-contain" />
         </div>
       </div>
 
@@ -113,7 +117,7 @@ const Onboarding = ({ onComplete, onConnectWallet, onCreateProfile, wallet }) =>
           Welcome to <span className="text-gradient-gold">ORBIT</span>
         </h1>
         <p className="text-xl text-gray-400 max-w-lg mx-auto">
-          The decentralized subscription platform built on Stellar
+          Get paid for your content on YouTube, Discord, Telegram, podcasts & more
         </p>
       </div>
 
@@ -126,13 +130,13 @@ const Onboarding = ({ onComplete, onConnectWallet, onCreateProfile, wallet }) =>
         </div>
         <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
           <Zap className="w-8 h-8 text-blue-400 mx-auto mb-2" />
-          <h3 className="font-semibold text-white">Instant Payments</h3>
-          <p className="text-sm text-gray-500">5-second settlements</p>
+          <h3 className="font-semibold text-white">Streaming Payments</h3>
+          <p className="text-sm text-gray-500">Get paid in real-time</p>
         </div>
         <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
           <Shield className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
           <h3 className="font-semibold text-white">Non-Custodial</h3>
-          <p className="text-sm text-gray-500">You control your funds</p>
+          <p className="text-sm text-gray-500">Your crypto stays yours</p>
         </div>
       </div>
 
@@ -241,12 +245,12 @@ const Onboarding = ({ onComplete, onConnectWallet, onCreateProfile, wallet }) =>
             I'm a Creator
           </h3>
           <p className="text-gray-400 text-sm">
-            Accept subscriptions and tips from your fans. Set up tiers, share your profile, and get paid instantly.
+            Accept crypto payments for your YouTube, Discord, Telegram, podcast, or any other content platform.
           </p>
           <ul className="mt-4 space-y-2 text-sm text-gray-500">
             <li className="flex items-center gap-2">
               <CheckCircle size={14} className="text-emerald-400" />
-              Create subscription tiers
+              Link your content platforms
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle size={14} className="text-emerald-400" />
@@ -279,7 +283,7 @@ const Onboarding = ({ onComplete, onConnectWallet, onCreateProfile, wallet }) =>
             I'm a Supporter
           </h3>
           <p className="text-gray-400 text-sm">
-            Support your favorite creators with crypto subscriptions. Fast payments, low fees.
+            Support creators you love on YouTube, Discord, Telegram & more with crypto subscriptions.
           </p>
           <ul className="mt-4 space-y-2 text-sm text-gray-500">
             <li className="flex items-center gap-2">
@@ -288,7 +292,7 @@ const Onboarding = ({ onComplete, onConnectWallet, onCreateProfile, wallet }) =>
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle size={14} className="text-emerald-400" />
-              Pay with XLM
+              Cancel anytime, get refund
             </li>
             <li className="flex items-center gap-2">
               <CheckCircle size={14} className="text-emerald-400" />
@@ -305,11 +309,11 @@ const Onboarding = ({ onComplete, onConnectWallet, onCreateProfile, wallet }) =>
     <div className="space-y-8">
       <div className="text-center space-y-4">
         <h2 className="text-3xl font-bold text-white">
-          {selectedRole === 'creator' ? 'Set Up Your Profile' : 'Get Some Testnet XLM'}
+          {selectedRole === 'creator' ? 'Set Up Your Payment Profile' : 'Get Some Testnet XLM'}
         </h2>
         <p className="text-gray-400">
           {selectedRole === 'creator' 
-            ? 'Let\'s get the basics ready — you can customize more later'
+            ? 'Create your profile and link to your content platforms'
             : 'You\'ll need XLM to make payments on Stellar'}
         </p>
       </div>
@@ -333,7 +337,7 @@ const Onboarding = ({ onComplete, onConnectWallet, onCreateProfile, wallet }) =>
           {/* Category */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Content Category
+              Where do you create content?
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {categories.map((cat) => (

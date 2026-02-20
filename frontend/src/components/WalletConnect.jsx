@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Wallet, Loader, AlertCircle, ExternalLink, CheckCircle, 
-  Smartphone, Monitor, ChevronRight, X, Zap
+  Smartphone, Monitor, ChevronRight, X, Zap, Copy, Check, RefreshCw
 } from 'lucide-react';
 import { isConnected, requestAccess } from '@stellar/freighter-api';
-import * as StellarSdk from 'stellar-sdk';
+import * as StellarSdk from '@stellar/stellar-sdk';
+import { QRCodeSVG } from 'qrcode.react';
 import { useToast } from '../context/ToastContext';
 import { PLATFORM_CONFIG } from '../config/platform';
+import { connectLobstr, waitForApproval, disconnectLobstr, abortApproval } from '../services/walletConnect';
 
 // Import wallet logos
 import freighterLogo from '../assets/wallets/freighter.avif';
@@ -44,13 +46,14 @@ function WalletConnect({ onConnect }) {
   const [selectedWallet, setSelectedWallet] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [step, setStep] = useState('select'); // 'select', 'connect', 'manual'
+  const [step, setStep] = useState('select'); // 'select' | 'connect' | 'manual' | 'lobstr-qr'
   const [manualKey, setManualKey] = useState('');
+  const [wcUri, setWcUri] = useState(null);
+  const [copied, setCopied] = useState(false);
   const toast = useToast();
 
-  // Check for installed wallets
   const [installedWallets, setInstalledWallets] = useState({});
-  
+
   useEffect(() => {
     const checkWallets = async () => {
       try {
@@ -63,7 +66,11 @@ function WalletConnect({ onConnect }) {
     checkWallets();
   }, []);
 
-  const fetchBalance = async (publicKey) => {
+  // ✅ FIX 5: Wrap fetchBalance in useCallback with an empty dependency array so
+  // it's a stable reference. Previously it was defined inline, causing the
+  // startLobstrConnection useCallback to never actually memoize (its dep changed
+  // every render), which could create subtle stale-closure bugs.
+  const fetchBalance = useCallback(async (publicKey) => {
     const server = new StellarSdk.Horizon.Server(PLATFORM_CONFIG.HORIZON_URL);
     try {
       const account = await server.loadAccount(publicKey);
@@ -75,17 +82,16 @@ function WalletConnect({ onConnect }) {
       }
       return { balance: 0, needsFunding: false };
     }
-  };
+  }, []); // stable — PLATFORM_CONFIG.HORIZON_URL is a constant
 
-  const connectFreighter = async () => {
+  const connectFreighter = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const { isConnected: installed } = await isConnected();
       if (!installed) {
         setError('Freighter not detected. Please install it first.');
-        setLoading(false);
         return;
       }
 
@@ -94,21 +100,58 @@ function WalletConnect({ onConnect }) {
       if (!address) throw new Error('Failed to get wallet address');
 
       const { balance, needsFunding } = await fetchBalance(address);
-      
+
       toast.success('Connected!', `${address.slice(0, 6)}...${address.slice(-4)}`);
       onConnect({ publicKey: address, balance, type: 'freighter', needsFunding });
-
     } catch (err) {
       setError(err.message || 'Connection failed');
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchBalance, toast, onConnect]);
+
+  const startLobstrConnection = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setWcUri(null);
+
+    try {
+      const { uri, approval } = await connectLobstr();
+      setWcUri(uri);
+      setStep('lobstr-qr');
+      setLoading(false);
+
+      // Wait for user to scan & approve — this resolves only when LOBSTR approves
+      const { publicKey } = await waitForApproval(approval);
+
+      const { balance, needsFunding } = await fetchBalance(publicKey);
+
+      toast.success('LOBSTR Connected!', `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}`);
+      onConnect({ publicKey, balance, type: 'lobstr', needsFunding });
+    } catch (err) {
+      // Ignore intentional user cancellations
+      if (err.message === 'Connection cancelled by user') return;
+
+      console.error('LOBSTR connection failed:', err);
+      setError(err.message || 'Connection failed');
+      setStep('connect');
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchBalance, toast, onConnect]);
+
+  const copyUri = useCallback(() => {
+    if (wcUri) {
+      navigator.clipboard.writeText(wcUri);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [wcUri]);
 
   const handleWalletSelect = async (wallet) => {
     setSelectedWallet(wallet);
     setError(null);
-    
+
     if (wallet.id === 'freighter') {
       if (installedWallets.freighter) {
         await connectFreighter();
@@ -117,24 +160,38 @@ function WalletConnect({ onConnect }) {
       }
     } else if (wallet.id === 'lobstr') {
       setStep('connect');
+      await startLobstrConnection();
     }
   };
+
+  // ✅ FIX 6 & 7: When user clicks Back on the QR screen, we must:
+  //   1. Set loading to false (it could be true while waitForApproval is pending)
+  //   2. Call abortApproval() so the pending promise is marked cancelled and won't
+  //      fire onConnect after the user has navigated away
+  //   3. Call disconnectLobstr() to clean up the WalletConnect pairing
+  const handleBackFromQr = useCallback(() => {
+    abortApproval();
+    disconnectLobstr();
+    setLoading(false); // ✅ FIX 6
+    setStep('select');
+    setSelectedWallet(null);
+    setWcUri(null);
+    setError(null);
+  }, []);
 
   const handleManualConnect = async () => {
     if (!manualKey || !manualKey.startsWith('G') || manualKey.length !== 56) {
       setError('Invalid Stellar address. Must start with G and be 56 characters.');
       return;
     }
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const { balance, needsFunding } = await fetchBalance(manualKey);
-      
       toast.success('Connected!', `${manualKey.slice(0, 6)}...${manualKey.slice(-4)}`);
       onConnect({ publicKey: manualKey, balance, type: 'readonly', needsFunding });
-
     } catch (err) {
       setError(err.message || 'Connection failed');
     } finally {
@@ -150,15 +207,13 @@ function WalletConnect({ onConnect }) {
     return urls[walletId] || '#';
   };
 
-  // Wallet Selection Screen
+  // ─── Wallet Selection Screen ────────────────────────────────────────────────
   if (step === 'select') {
     return (
       <div className="card-glass p-6 max-w-md mx-auto overflow-hidden">
-        {/* Header with animated gradient */}
         <div className="relative mb-6">
           <div className="absolute -top-20 -left-20 w-40 h-40 bg-purple-500/20 rounded-full blur-3xl" />
           <div className="absolute -top-10 -right-10 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl" />
-          
           <div className="relative text-center">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-white/10 flex items-center justify-center backdrop-blur-sm">
               <Wallet size={28} className="text-white" />
@@ -168,7 +223,6 @@ function WalletConnect({ onConnect }) {
           </div>
         </div>
 
-        {/* Error */}
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-2">
             <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
@@ -176,11 +230,9 @@ function WalletConnect({ onConnect }) {
           </div>
         )}
 
-        {/* Wallet Options */}
         <div className="space-y-3 mb-6">
           {WALLETS.map(wallet => {
             const isInstalled = installedWallets[wallet.id];
-            
             return (
               <button
                 key={wallet.id}
@@ -188,16 +240,11 @@ function WalletConnect({ onConnect }) {
                 disabled={loading}
                 className={`w-full p-4 rounded-xl ${wallet.bgColor} border ${wallet.borderColor} ${wallet.hoverBorder} transition-all group relative overflow-hidden disabled:opacity-50`}
               >
-                {/* Hover glow */}
                 <div className={`absolute inset-0 bg-gradient-to-r ${wallet.color} opacity-0 group-hover:opacity-10 transition-opacity`} />
-                
                 <div className="relative flex items-center gap-4">
-                  {/* Icon */}
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden">
                     <img src={wallet.logo} alt={wallet.name} className="w-10 h-10 object-contain" />
                   </div>
-                  
-                  {/* Info */}
                   <div className="flex-1 text-left">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-white">{wallet.name}</span>
@@ -217,8 +264,6 @@ function WalletConnect({ onConnect }) {
                       <span className="text-xs text-orbit-gray">{wallet.description}</span>
                     </div>
                   </div>
-                  
-                  {/* Arrow */}
                   <ChevronRight size={18} className="text-orbit-gray group-hover:text-white group-hover:translate-x-1 transition-all" />
                 </div>
               </button>
@@ -226,7 +271,6 @@ function WalletConnect({ onConnect }) {
           })}
         </div>
 
-        {/* Manual Entry Option */}
         <div className="pt-4 border-t border-white/5">
           <button
             onClick={() => setStep('manual')}
@@ -240,14 +284,13 @@ function WalletConnect({ onConnect }) {
     );
   }
 
-  // Connect/Install Screen for selected wallet
+  // ─── Connect / Install Screen ───────────────────────────────────────────────
   if (step === 'connect' && selectedWallet) {
     const isExtension = selectedWallet.type === 'extension';
     const isInstalled = installedWallets[selectedWallet.id];
-    
+
     return (
       <div className="card-glass p-6 max-w-md mx-auto">
-        {/* Back Button */}
         <button
           onClick={() => { setStep('select'); setSelectedWallet(null); setError(null); }}
           className="mb-4 text-sm text-orbit-gray hover:text-white transition-colors flex items-center gap-1"
@@ -256,7 +299,6 @@ function WalletConnect({ onConnect }) {
           <span>Back</span>
         </button>
 
-        {/* Wallet Header */}
         <div className="text-center mb-6">
           <div className="w-20 h-20 mx-auto mb-4 rounded-2xl flex items-center justify-center overflow-hidden">
             <img src={selectedWallet.logo} alt={selectedWallet.name} className="w-16 h-16 object-contain" />
@@ -265,7 +307,6 @@ function WalletConnect({ onConnect }) {
           <p className="text-sm text-orbit-gray">{selectedWallet.description}</p>
         </div>
 
-        {/* Error */}
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-2">
             <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
@@ -273,7 +314,6 @@ function WalletConnect({ onConnect }) {
           </div>
         )}
 
-        {/* Freighter - Extension flow */}
         {isExtension && (
           <div className="space-y-4">
             {isInstalled ? (
@@ -283,15 +323,9 @@ function WalletConnect({ onConnect }) {
                 className={`w-full py-3.5 rounded-xl bg-gradient-to-r ${selectedWallet.color} text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg`}
               >
                 {loading ? (
-                  <>
-                    <Loader size={16} className="animate-spin" />
-                    <span>Connecting...</span>
-                  </>
+                  <><Loader size={16} className="animate-spin" /><span>Connecting...</span></>
                 ) : (
-                  <>
-                    <CheckCircle size={16} />
-                    <span>Connect {selectedWallet.name}</span>
-                  </>
+                  <><CheckCircle size={16} /><span>Connect {selectedWallet.name}</span></>
                 )}
               </button>
             ) : (
@@ -315,83 +349,112 @@ function WalletConnect({ onConnect }) {
           </div>
         )}
 
-        {/* LOBSTR - Mobile flow */}
         {selectedWallet.id === 'lobstr' && (
           <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
-              <p className="text-sm text-orbit-gray mb-3">
-                Scan with LOBSTR app or enter your address below
-              </p>
-              
-              {/* QR Code Placeholder - would need a QR library */}
-              <div className="w-32 h-32 mx-auto mb-4 rounded-xl bg-white flex items-center justify-center">
-                <div className="text-center text-black/60 text-xs p-2">
-                  <Smartphone size={24} className="mx-auto mb-1 text-black/40" />
-                  Open LOBSTR
-                </div>
-              </div>
-              
-              <a
-                href="https://lobstr.co"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-400 hover:underline flex items-center justify-center gap-1"
-              >
-                Get LOBSTR <ExternalLink size={10} />
-              </a>
-            </div>
-            
-            {/* Manual entry for LOBSTR users */}
-            <div className="relative">
-              <input
-                type="text"
-                value={manualKey}
-                onChange={(e) => setManualKey(e.target.value.toUpperCase())}
-                placeholder="Enter your LOBSTR address (G...)"
-                className="w-full py-3 px-4 pr-12 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500/50 text-white text-sm placeholder:text-orbit-gray outline-none transition-colors"
-              />
-              {manualKey && (
-                <button
-                  onClick={() => setManualKey('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-orbit-gray hover:text-white"
-                >
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-            
             <button
-              onClick={handleManualConnect}
-              disabled={loading || !manualKey}
+              onClick={startLobstrConnection}
+              disabled={loading}
               className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
             >
               {loading ? (
-                <>
-                  <Loader size={16} className="animate-spin" />
-                  <span>Connecting...</span>
-                </>
+                <><Loader size={16} className="animate-spin" /><span>Connecting...</span></>
               ) : (
-                <>
-                  <Wallet size={16} />
-                  <span>Connect</span>
-                </>
+                <><Smartphone size={16} /><span>Connect with LOBSTR</span></>
               )}
             </button>
-            
-            <p className="text-[10px] text-orbit-gray text-center">
-              Note: Read-only mode - transactions require signing in LOBSTR
-            </p>
           </div>
         )}
       </div>
     );
   }
 
-  // Manual Entry Screen
+  // ─── LOBSTR QR Code Screen ──────────────────────────────────────────────────
+  if (step === 'lobstr-qr') {
+    return (
+      <div className="card-glass p-6 max-w-md mx-auto">
+        {/* ✅ FIX 6 & 7: Use handleBackFromQr which resets loading, aborts approval,
+            and disconnects — instead of the old inline handler that didn't do these. */}
+        <button
+          onClick={handleBackFromQr}
+          className="mb-4 text-sm text-orbit-gray hover:text-white transition-colors flex items-center gap-1"
+        >
+          <ChevronRight size={14} className="rotate-180" />
+          <span>Back</span>
+        </button>
+
+        <div className="text-center mb-6">
+          <div className="w-20 h-20 mx-auto mb-4 rounded-2xl flex items-center justify-center overflow-hidden">
+            <img src={lobstrLogo} alt="LOBSTR" className="w-16 h-16 object-contain" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-1">Scan with LOBSTR</h2>
+          <p className="text-sm text-orbit-gray">Open LOBSTR app and scan this QR code</p>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-2">
+            <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
+            <p className="text-xs text-red-300">{error}</p>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div className="p-6 rounded-2xl bg-white flex items-center justify-center">
+            {wcUri ? (
+              <QRCodeSVG value={wcUri} size={200} level="M" includeMargin={false} />
+            ) : (
+              <div className="w-[200px] h-[200px] flex items-center justify-center">
+                <Loader size={32} className="animate-spin text-gray-400" />
+              </div>
+            )}
+          </div>
+
+          {wcUri && (
+            <button
+              onClick={copyUri}
+              className="w-full py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+            >
+              {copied ? (
+                <><Check size={16} className="text-emerald-400" /><span className="text-emerald-400">Copied!</span></>
+              ) : (
+                <><Copy size={16} /><span>Copy connection link</span></>
+              )}
+            </button>
+          )}
+
+          <button
+            onClick={startLobstrConnection}
+            disabled={loading}
+            className="w-full py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-orbit-gray hover:text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            <span>{loading ? 'Connecting...' : 'Generate new QR'}</span>
+          </button>
+
+          <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
+            <p className="text-xs text-blue-300 text-center">
+              1. Open LOBSTR app on your phone<br />
+              2. Tap the QR scanner icon (top right of home screen)<br />
+              3. Scan this QR code to connect
+            </p>
+          </div>
+
+          <a
+            href="https://lobstr.co"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-center text-xs text-blue-400 hover:underline"
+          >
+            Don't have LOBSTR? Download it here <ExternalLink size={10} className="inline" />
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Manual Entry Screen ────────────────────────────────────────────────────
   if (step === 'manual') {
     return (
       <div className="card-glass p-6 max-w-md mx-auto">
-        {/* Back Button */}
         <button
           onClick={() => { setStep('select'); setError(null); setManualKey(''); }}
           className="mb-4 text-sm text-orbit-gray hover:text-white transition-colors flex items-center gap-1"
@@ -408,7 +471,6 @@ function WalletConnect({ onConnect }) {
           <p className="text-sm text-orbit-gray">Enter your Stellar public key</p>
         </div>
 
-        {/* Error */}
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-2">
             <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
@@ -417,37 +479,29 @@ function WalletConnect({ onConnect }) {
         )}
 
         <div className="space-y-4">
-          <div className="relative">
-            <input
-              type="text"
-              value={manualKey}
-              onChange={(e) => setManualKey(e.target.value.toUpperCase())}
-              placeholder="G..."
-              className="w-full py-3.5 px-4 rounded-xl bg-white/5 border border-white/10 focus:border-purple-500/50 text-white font-mono text-sm placeholder:text-orbit-gray outline-none transition-colors"
-            />
-          </div>
-          
+          <input
+            type="text"
+            value={manualKey}
+            onChange={(e) => setManualKey(e.target.value.toUpperCase())}
+            placeholder="G..."
+            className="w-full py-3.5 px-4 rounded-xl bg-white/5 border border-white/10 focus:border-purple-500/50 text-white font-mono text-sm placeholder:text-orbit-gray outline-none transition-colors"
+          />
+
           <button
             onClick={handleManualConnect}
             disabled={loading || !manualKey}
             className="w-full py-3.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
           >
             {loading ? (
-              <>
-                <Loader size={16} className="animate-spin" />
-                <span>Connecting...</span>
-              </>
+              <><Loader size={16} className="animate-spin" /><span>Connecting...</span></>
             ) : (
-              <>
-                <CheckCircle size={16} />
-                <span>Connect</span>
-              </>
+              <><CheckCircle size={16} /><span>Connect</span></>
             )}
           </button>
-          
+
           <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
             <p className="text-xs text-amber-300 text-center">
-              ⚠️ Read-only mode - you won't be able to sign transactions
+              ⚠️ Read-only mode — you won't be able to sign transactions
             </p>
           </div>
         </div>

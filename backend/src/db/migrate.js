@@ -132,6 +132,45 @@ const migrations = [
   
   // Index for featured creators
   `CREATE INDEX IF NOT EXISTS idx_creators_featured ON creators(is_featured) WHERE is_featured = true`,
+  
+  // Admin wallets table - stores authorized admin wallet addresses
+  `CREATE TABLE IF NOT EXISTS admin_wallets (
+    id SERIAL PRIMARY KEY,
+    wallet_address VARCHAR(56) UNIQUE NOT NULL,
+    label VARCHAR(100),
+    added_by VARCHAR(56),
+    is_active BOOLEAN DEFAULT TRUE,
+    permissions JSONB DEFAULT '["all"]',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )`,
+  
+  // Platform settings table - stores configurable platform settings
+  `CREATE TABLE IF NOT EXISTS platform_settings (
+    id SERIAL PRIMARY KEY,
+    key VARCHAR(100) UNIQUE NOT NULL,
+    value TEXT NOT NULL,
+    description TEXT,
+    updated_by VARCHAR(56),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )`,
+  
+  // Platform earnings tracking
+  `CREATE TABLE IF NOT EXISTS platform_earnings (
+    id SERIAL PRIMARY KEY,
+    transaction_id INTEGER REFERENCES transactions(id),
+    amount_xlm DECIMAL(20, 7) NOT NULL,
+    fee_type VARCHAR(30) DEFAULT 'subscription_fee',
+    status VARCHAR(20) DEFAULT 'collected' CHECK (status IN ('collected', 'withdrawn', 'pending')),
+    withdrawal_tx_hash VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  )`,
+  
+  // Indexes for new tables
+  `CREATE INDEX IF NOT EXISTS idx_admin_wallets_address ON admin_wallets(wallet_address)`,
+  `CREATE INDEX IF NOT EXISTS idx_platform_settings_key ON platform_settings(key)`,
+  `CREATE INDEX IF NOT EXISTS idx_platform_earnings_status ON platform_earnings(status)`,
 ];
 
 async function migrate() {

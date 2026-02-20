@@ -94,6 +94,15 @@ export default async function subscriptionRoutes(fastify, options) {
         [data.creatorId, data.amountXlm - platformFee]
       );
       
+      // Track platform earnings
+      if (platformFee > 0) {
+        await client.query(
+          `INSERT INTO platform_earnings (transaction_id, amount_xlm, fee_type, status)
+           VALUES ($1, $2, 'subscription_fee', 'collected')`,
+          [txResult.rows[0].id, platformFee]
+        );
+      }
+      
       // Create notification for creator
       await client.query(
         `INSERT INTO notifications (user_id, type, title, message, data)
@@ -284,6 +293,15 @@ export default async function subscriptionRoutes(fastify, options) {
          WHERE id = $1`,
         [subscription.creator_id, parseFloat(subscription.amount_xlm) - platformFee]
       );
+      
+      // Track platform earnings
+      if (platformFee > 0) {
+        await client.query(
+          `INSERT INTO platform_earnings (transaction_id, amount_xlm, fee_type, status)
+           VALUES ($1, $2, 'renewal_fee', 'collected')`,
+          [txResult.rows[0].id, platformFee]
+        );
+      }
       
       return {
         subscription: updatedSub.rows[0],

@@ -52,16 +52,16 @@ export const authApi = {
   getNonce: (walletAddress) => 
     request(`/auth/nonce/${walletAddress}`),
   
-  verify: (walletAddress, signedMessage, publicKey) =>
+  verify: (walletAddress, signedMessage, message) =>
     request('/auth/verify', {
       method: 'POST',
-      body: { walletAddress, signedMessage, publicKey },
+      body: { walletAddress, signedMessage, message },
     }),
   
-  register: (walletAddress, signedMessage, publicKey, displayName) =>
+  register: (walletAddress, role = 'subscriber', displayName = null, bio = null) =>
     request('/auth/register', {
       method: 'POST',
-      body: { walletAddress, signedMessage, publicKey, displayName },
+      body: { walletAddress, role, displayName, bio },
     }),
   
   me: () => request('/auth/me'),
@@ -160,6 +160,54 @@ export const transactionsApi = {
     }),
   
   getStats: () => request('/transactions/stats'),
+};
+
+// Admin API
+export const adminApi = {
+  // Check admin status
+  checkAdmin: () => request('/admin/check', { method: 'POST' }),
+  
+  // Stats & Dashboard
+  getStats: () => request('/admin/stats'),
+  getChartData: (period = '30d') => request(`/admin/stats/chart?period=${period}`),
+  
+  // Users management
+  getUsers: (page = 1, limit = 20, search = '', role = 'all') => 
+    request(`/admin/users?page=${page}&limit=${limit}&search=${search}&role=${role}`),
+  updateUser: (id, data) => request(`/admin/users/${id}`, { method: 'PATCH', body: data }),
+  deleteUser: (id) => request(`/admin/users/${id}`, { method: 'DELETE' }),
+  
+  // Creators management
+  getCreators: (page = 1, limit = 20, search = '') =>
+    request(`/admin/creators?page=${page}&limit=${limit}&search=${search}`),
+  updateCreator: (id, data) => request(`/admin/creators/${id}`, { method: 'PATCH', body: data }),
+  
+  // Transactions
+  getTransactions: (page = 1, limit = 20, type = 'all', status = 'all') =>
+    request(`/admin/transactions?page=${page}&limit=${limit}&type=${type}&status=${status}`),
+  
+  // Subscriptions
+  getSubscriptions: (page = 1, limit = 20, status = 'all') =>
+    request(`/admin/subscriptions?page=${page}&limit=${limit}&status=${status}`),
+  
+  // Platform settings
+  getSettings: () => request('/admin/settings'),
+  updateSettings: (settings) => request('/admin/settings', { method: 'PUT', body: settings }),
+  getPublicSettings: () => request('/admin/settings/public'),
+  
+  // Admin wallets
+  getAdminWallets: () => request('/admin/wallets'),
+  addAdminWallet: (wallet_address, label) => 
+    request('/admin/wallets', { method: 'POST', body: { wallet_address, label } }),
+  removeAdminWallet: (id) => request(`/admin/wallets/${id}`, { method: 'DELETE' }),
+  
+  // Earnings & Withdrawal
+  getEarnings: () => request('/admin/earnings'),
+  requestWithdrawal: (amount_xlm, destination_wallet) =>
+    request('/admin/withdraw', { method: 'POST', body: { amount_xlm, destination_wallet } }),
+  
+  // Audit
+  getAuditLog: (limit = 50) => request(`/admin/audit?limit=${limit}`),
 };
 
 // WebSocket client
@@ -269,5 +317,6 @@ export default {
   creators: creatorsApi,
   subscriptions: subscriptionsApi,
   transactions: transactionsApi,
+  admin: adminApi,
   ws: wsClient,
 };

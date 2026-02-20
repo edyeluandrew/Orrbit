@@ -13,7 +13,7 @@ import subscriptionRoutes from './routes/subscriptions.js';
 import transactionRoutes from './routes/transactions.js';
 import webhookRoutes from './routes/webhooks.js';
 import adminRoutes from './routes/admin.js';
-import { setupWebSocket } from './websocket/index.js';
+import websocketRoutes from './websocket/index.js';
 
 const fastify = Fastify({
   logger: {
@@ -96,7 +96,7 @@ fastify.register(webhookRoutes, { prefix: '/api/webhooks' });
 fastify.register(adminRoutes, { prefix: '/api/admin' });
 
 // WebSocket setup
-setupWebSocket(fastify);
+fastify.register(websocketRoutes);
 
 // Error handler
 fastify.setErrorHandler((error, request, reply) => {
