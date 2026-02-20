@@ -17,16 +17,17 @@ import websocketRoutes from './websocket/index.js';
 
 const fastify = Fastify({
   logger: {
-    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-    transport: {
+    level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+    transport: process.env.NODE_ENV !== 'production' ? {
       target: 'pino-pretty',
       options: {
         colorize: true,
         translateTime: 'HH:MM:ss',
         ignore: 'pid,hostname',
       },
-    },
+    } : undefined,
   },
+  trustProxy: process.env.TRUST_PROXY === 'true',
 });
 
 // Register plugins
@@ -71,9 +72,14 @@ fastify.decorate('optionalAuth', async function (request, reply) {
   }
 });
 
-// Health check
+// Health check - verifies DB connection
 fastify.get('/health', async () => {
-  return { status: 'ok', timestamp: new Date().toISOString() };
+  try {
+    await db.query('SELECT 1');
+    return { status: 'ok', db: 'connected', timestamp: new Date().toISOString() };
+  } catch (err) {
+    return { status: 'degraded', db: 'disconnected', timestamp: new Date().toISOString() };
+  }
 });
 
 // API info

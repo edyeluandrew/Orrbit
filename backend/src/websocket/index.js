@@ -64,11 +64,24 @@ export function getConnectionStats() {
 }
 
 export default async function websocketRoutes(fastify, options) {
+  // Allowed origins for WebSocket connections
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGIN || 'http://localhost:5173')
+    .split(',')
+    .map(o => o.trim());
+
   /**
    * WebSocket endpoint for authenticated users
    * Connect with: ws://localhost:3001/ws?token=JWT_TOKEN
    */
   fastify.get('/ws', { websocket: true }, async (connection, request) => {
+    // Validate origin
+    const origin = request.headers.origin;
+    if (origin && !allowedOrigins.includes(origin)) {
+      fastify.log.warn(`WebSocket connection rejected from origin: ${origin}`);
+      connection.socket.close(1008, 'Origin not allowed');
+      return;
+    }
+
     const { token, wallet } = request.query;
     let userId = null;
     let walletAddress = wallet;
